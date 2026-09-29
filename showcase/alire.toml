@@ -1,0 +1,16 @@
+name = "portal_showcase"
+description = "portal acceptance test: window, framebuffer, events"
+version = "0.1.0-dev"
+authors = ["Olivier Henley"]
+maintainers = ["Olivier Henley <henley@adacore.com>"]
+maintainers-logins = ["ohenley"]
+licenses = "Apache-2.0"
+
+executables = ["showcase"]
+project-files = ["portal_showcase.gpr"]
+
+[[depends-on]]
+portal = "*"
+
+[[pins]]
+portal = { path = ".." }

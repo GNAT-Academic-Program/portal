@@ -1,0 +1,7 @@
+--  Global assertion policy for the library.
+--  Loop invariants and variants exist for gnatprove; evaluating them at
+--  runtime on a 640x480 framebuffer is quadratic and useless.
+--  Pre/Post stay on (-gnata) and so do the ghost functions they use.
+pragma Assertion_Policy
+  (Loop_Invariant => Ignore,
+   Loop_Variant   => Ignore);

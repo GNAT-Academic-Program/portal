@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  null-port:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: alire-project/setup-alire@v4
+      - name: Build library (null port)
+        run: alr -n build
+      - name: Tests
+        run: |
+          cd tests
+          alr -n build
+          ./bin/tests
+      - name: Showcase (runs headless, exits on synthetic Quit)
+        run: |
+          cd showcase
+          alr -n build
+          alr -n run
+      - name: SPARK flow analysis
+        run: |
+          alr -n with gnatprove
+          alr -n exec -- gnatprove -P portal.gpr --mode=flow --checks-as-errors=on
+
+  x11-port:
+    runs-on: ubuntu-latest
+    env:
+      PORTAL_PORT: x11
+    steps:
+      - uses: actions/checkout@v4
+      - uses: alire-project/setup-alire@v4
+      - run: sudo apt-get install -y libx11-dev xvfb
+      - name: Build library and showcase (x11 port)
+        run: |
+          alr -n build
+          cd showcase && alr -n build
+      - name: Showcase opens a window under Xvfb
+        run: |
+          cd showcase
+          xvfb-run -a timeout 5 ./bin/showcase || test $? -eq 124
+
+  win32-port:
+    runs-on: windows-latest
+    env:
+      PORTAL_PORT: win32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: alire-project/setup-alire@v4
+      - name: Build library and showcase (win32 port)
+        run: |
+          alr -n build
+          cd showcase
+          alr -n build
+      # No display on the runner; a build is the check. Run it on a
+      # real Windows machine to see the window.
