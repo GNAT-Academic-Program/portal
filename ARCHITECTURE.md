@@ -8,12 +8,13 @@ application (toolkit, game, editor)
 Portal.Backend          THE API. One spec. Bodies: ports/null, ports/x11, ports/win32
         |
 Portal.Framebuffer      Buffer + Clear/Fill/Blit/Blend/Clip. SPARK. No OS.
-Portal.Events           Event, the closed variant record. Pure.
-Portal.Input            Key, Modifiers, buttons, gamepads. Pure.
-Portal                  Pixels, Point, Size, Rect, Color, Window_Id, Ticks. Pure.
+Portal.Events  = Bedrock.Input   Event, the closed variant record. Pure.
+Portal.Input   = Bedrock.Input   Key, Modifiers, buttons, gamepads. Pure.
+Portal                           defaults; Pixels, Point, Size, Rect, Color, Window_Id,
+                                 Ticks come from Bedrock.Screen and Bedrock.Colors. Pure.
 ```
 
-`Portal`, `Portal.Input`, `Portal.Events` are `Pure`: no state, no OS,
+`Portal` and bedrock's packages are `Pure`: no state, no OS,
 usable from anywhere including a bare-metal runtime later.
 `Portal.Framebuffer` is SPARK and has no OS. `Portal.Backend` is the
 only package with a platform behind it.

@@ -9,7 +9,7 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    Initialized : Boolean := False;
    Open        : array (Valid_Window_Id) of Boolean := [others => False];
-   Sizes       : array (Valid_Window_Id) of Portal.Size;
+   Sizes       : array (Valid_Window_Id) of Bedrock.Screen.Size;
    Polls       : Natural := 0;
    Start       : Ada.Calendar.Time;
 
@@ -43,7 +43,7 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Create_Window
      (Title  : String;
-      Size   : Portal.Size;
+      Size   : Bedrock.Screen.Size;
       Flags  : Window_Flags;
       Window : out Window_Id)
    is
@@ -67,12 +67,12 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Set_Title (Window : Window_Id; Title : String) is null;
 
-   procedure Set_Size (Window : Window_Id; Size : Portal.Size) is
+   procedure Set_Size (Window : Window_Id; Size : Bedrock.Screen.Size) is
    begin
       Sizes (Window) := Size;
    end Set_Size;
 
-   function Get_Size (Window : Window_Id) return Portal.Size is (Sizes (Window));
+   function Get_Size (Window : Window_Id) return Bedrock.Screen.Size is (Sizes (Window));
 
    procedure Show (Window : Window_Id) is null;
    procedure Hide (Window : Window_Id) is null;

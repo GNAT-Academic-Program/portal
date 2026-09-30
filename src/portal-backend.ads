@@ -11,7 +11,6 @@
 --  no GPU context (a later package can expose the native handle for
 --  that). Compare with SDL3's video + events subsystems and GLFW.
 
-with Portal.Events;      use Portal.Events;
 with Portal.Framebuffer; use Portal.Framebuffer;
 with Portal.Input;       use Portal.Input;
 
@@ -48,7 +47,7 @@ package Portal.Backend with SPARK_Mode is
 
    procedure Create_Window
      (Title  : String;
-      Size   : Portal.Size;
+      Size   : Bedrock.Screen.Size;
       Flags  : Window_Flags;
       Window : out Window_Id)
      with Pre  => Is_Initialized,
@@ -63,10 +62,10 @@ package Portal.Backend with SPARK_Mode is
    procedure Set_Title (Window : Window_Id; Title : String)
      with Pre => Is_Initialized and then Is_Open (Window);
 
-   procedure Set_Size (Window : Window_Id; Size : Portal.Size)
+   procedure Set_Size (Window : Window_Id; Size : Bedrock.Screen.Size)
      with Pre => Is_Initialized and then Is_Open (Window);
 
-   function Get_Size (Window : Window_Id) return Portal.Size
+   function Get_Size (Window : Window_Id) return Bedrock.Screen.Size
      with Pre => Is_Initialized and then Is_Open (Window);
    --  Client area, in physical pixels. This is the size to draw at.
 

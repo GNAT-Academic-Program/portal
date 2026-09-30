@@ -27,7 +27,7 @@ every one of them re-implements or pulls a C library for.
 ## What is in the seed
 
 ```
-src/portal.ads              Pixels, Point, Size, Rect, Color, Window_Id, Ticks    done
+src/portal.ads              defaults; the types are bedrock's (see below)          done
 src/portal-input.ads        Key, Modifiers, Mouse_Button, Gamepad_*               done
 src/portal-events.ads       Event: the closed variant record                      done
 src/portal-framebuffer.ads  Buffer, Clear, Fill, Fill_Blend, Blit, Blend, Clip    done, SPARK
@@ -41,6 +41,25 @@ tests/                      unit tests, no framework                            
 ```
 
 Read `ARCHITECTURE.md` before touching anything.
+
+## Types come from bedrock
+
+`Pixels`, `Point`, `Size`, `Rect`, `Ticks`, `Window_Id`, `Color`,
+`Key`, `Event` and the pixel `Image` are declared in
+[bedrock](https://github.com/GNAT-Academic-Program/bedrock), the GAP
+foundation crate, and portal uses them as is. `Portal.Input` and
+`Portal.Events` are renamings of `Bedrock.Input`. That is what lets
+yarlib run on portal with no conversion at the seam, and it is why a
+client says:
+
+```ada
+with Bedrock.Screen; use Bedrock.Screen;
+with Bedrock.Colors; use Bedrock.Colors;
+with Portal.Input;   use Portal.Input;
+```
+
+bedrock changes only through the GAP coordinator; if portal needs a
+new fundamental type, that is a conversation, not a commit.
 
 ## Build
 

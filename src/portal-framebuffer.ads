@@ -13,24 +13,26 @@
 --    F1  No out-of-bounds pixel access, ever (index checks discharged).
 --    F2  Fill and Blit never write outside the destination rectangle
 --        clipped to the buffer.
---    F3  Blend is a total function on Color (no overflow in the mix).
+--    F3  Blend (Bedrock.Colors) is total on Color: no overflow in the mix.
+
+with Bedrock.Buffers;
 
 package Portal.Framebuffer with SPARK_Mode is
 
-   Max_Width  : constant := 4096;
-   Max_Height : constant := 4096;
+   Max_Width  : constant := Bedrock.Buffers.Max_Width;
+   Max_Height : constant := Bedrock.Buffers.Max_Height;
    --  Enough for a 4K display. A bare-metal port instantiates the
    --  buffer at its panel size; the desktop ports at the window size.
 
-   subtype Column is Extent range 0 .. Max_Width - 1;
-   subtype Row    is Extent range 0 .. Max_Height - 1;
+   subtype Column is Bedrock.Buffers.Column;
+   subtype Row    is Bedrock.Buffers.Row;
 
-   type Pixel_Array is array (Row range <>, Column range <>) of Color
-     with Pack;
+   subtype Pixel_Array is Bedrock.Buffers.Pixel_Array;
 
-   type Buffer (Height : Row; Width : Column) is record
-      Pixels : Pixel_Array (0 .. Height, 0 .. Width) := [others => [others => Transparent]];
-   end record;
+   subtype Buffer is Bedrock.Buffers.Image;
+   --  Discriminants are the LAST index: Buffer (479, 639) is 640 x 480.
+   --  The component is Data (Y, X). Bedrock.Buffers.Make builds one by
+   --  width and height.
    --  Height and Width are the LAST valid index, so a 640x480 buffer
    --  is Buffer (479, 639). Bounded by discriminant: no heap.
 
@@ -45,7 +47,7 @@ package Portal.Framebuffer with SPARK_Mode is
    ---------------------------------------------------------------------
 
    function Get (B : Buffer; P : Point) return Color is
-     (B.Pixels (Row (P.Y), Column (P.X)))
+     (B.Data (Row (P.Y), Column (P.X)))
      with Pre => In_Bounds (B, P);
 
    procedure Put (B : in out Buffer; P : Point; C : Color)
@@ -58,7 +60,6 @@ package Portal.Framebuffer with SPARK_Mode is
    --  Blending
    ---------------------------------------------------------------------
 
-   function Blend (Src, Dst : Color) return Color;
    --  Source-over with straight alpha: Src drawn on top of Dst.
    --  Src.A = 255 returns Src; Src.A = 0 returns Dst.
 
@@ -69,7 +70,7 @@ package Portal.Framebuffer with SPARK_Mode is
    procedure Clear (B : in out Buffer; C : Color)
      with Post => B.Width = B.Width'Old and then B.Height = B.Height'Old
                   and then (for all Y in 0 .. B.Height =>
-                              (for all X in 0 .. B.Width => B.Pixels (Y, X) = C));
+                              (for all X in 0 .. B.Width => B.Data (Y, X) = C));
 
    procedure Fill (B : in out Buffer; R : Rect; C : Color)
      with Post => B.Width = B.Width'Old and then B.Height = B.Height'Old;

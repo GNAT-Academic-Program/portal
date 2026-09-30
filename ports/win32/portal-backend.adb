@@ -23,7 +23,7 @@ package body Portal.Backend with SPARK_Mode => Off is
    type Window_Slot is record
       Open   : Boolean := False;
       Handle : HWND := System.Null_Address;
-      Size   : Portal.Size;
+      Size   : Bedrock.Screen.Size;
    end record;
    Slots : array (Valid_Window_Id) of Window_Slot;
 
@@ -153,7 +153,7 @@ package body Portal.Backend with SPARK_Mode => Off is
             return 0;
          when WM_SIZE =>
             declare
-               S : constant Portal.Size := (Extent (Lo (L)), Extent (Hi (L)));
+               S : constant Bedrock.Screen.Size := (Extent (Lo (L)), Extent (Hi (L)));
             begin
                if S /= Slots (Id).Size then
                   Slots (Id).Size := S;
@@ -287,7 +287,7 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Create_Window
      (Title  : String;
-      Size   : Portal.Size;
+      Size   : Bedrock.Screen.Size;
       Flags  : Window_Flags;
       Window : out Window_Id)
    is
@@ -333,7 +333,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       if SetWindowTextA (Slots (Window).Handle, T'Address) = 0 then null; end if;
    end Set_Title;
 
-   procedure Set_Size (Window : Window_Id; Size : Portal.Size) is
+   procedure Set_Size (Window : Window_Id; Size : Bedrock.Screen.Size) is
       R : aliased Win_Rect := (0, 0, long (Size.Width), long (Size.Height));
    begin
       if AdjustWindowRect (R'Access, WS_OVERLAPPEDWINDOW, 0) = 0 then null; end if;
@@ -345,7 +345,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       end if;
    end Set_Size;
 
-   function Get_Size (Window : Window_Id) return Portal.Size is (Slots (Window).Size);
+   function Get_Size (Window : Window_Id) return Bedrock.Screen.Size is (Slots (Window).Size);
 
    procedure Show (Window : Window_Id) is
    begin
@@ -381,7 +381,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       for Y in 0 .. Frame.Height loop
          for X in 0 .. Frame.Width loop
             declare
-               C : constant Color := Frame.Pixels (Y, X);
+               C : constant Color := Frame.Data (Y, X);
             begin
                Data (I) := Byte (C.B); Data (I + 1) := Byte (C.G);
                Data (I + 2) := Byte (C.R); Data (I + 3) := 0;

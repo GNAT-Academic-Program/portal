@@ -8,10 +8,10 @@
 --  the port's synthetic Quit and the program exits 0. That is the
 --  whole test: build, run, exit clean, on every port.
 
+with Bedrock.Screen; use Bedrock.Screen;
 with Ada.Text_IO;        use Ada.Text_IO;
 with Portal;             use Portal;
 with Portal.Backend;     use Portal.Backend;
-with Portal.Events;      use Portal.Events;
 with Portal.Framebuffer; use Portal.Framebuffer;
 with Portal.Input;       use Portal.Input;
 

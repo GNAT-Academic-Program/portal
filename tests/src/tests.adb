@@ -2,11 +2,12 @@
 --  Ada, no framework, non-zero exit on failure. Runs on the null port
 --  in CI. Extend as you implement.
 
+with Bedrock.Screen; use Bedrock.Screen;
+with Bedrock.Colors; use Bedrock.Colors;
 with Ada.Command_Line;
 with Ada.Text_IO;        use Ada.Text_IO;
 with Portal;             use Portal;
 with Portal.Backend;     use Portal.Backend;
-with Portal.Events;      use Portal.Events;
 with Portal.Framebuffer; use Portal.Framebuffer;
 with Portal.Input;       use Portal.Input;
 

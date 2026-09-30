@@ -25,7 +25,7 @@ package body Portal.Backend with SPARK_Mode => Off is
    type Window_Slot is record
       Open   : Boolean := False;
       Handle : Xlib.Window := 0;
-      Size   : Portal.Size;
+      Size   : Bedrock.Screen.Size;
    end record;
    Slots : array (Valid_Window_Id) of Window_Slot;
 
@@ -238,7 +238,7 @@ package body Portal.Backend with SPARK_Mode => Off is
 
          when Configure_Notify =>
             declare
-               S  : constant Portal.Size := (Extent (CE.Width), Extent (CE.Height));
+               S  : constant Bedrock.Screen.Size := (Extent (CE.Width), Extent (CE.Height));
             begin
                if S /= Slots (W).Size then
                   Slots (W).Size := S;
@@ -313,7 +313,7 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Create_Window
      (Title  : String;
-      Size   : Portal.Size;
+      Size   : Bedrock.Screen.Size;
       Flags  : Window_Flags;
       Window : out Window_Id)
    is
@@ -366,14 +366,14 @@ package body Portal.Backend with SPARK_Mode => Off is
       XFlush (Display);
    end Set_Title;
 
-   procedure Set_Size (Window : Window_Id; Size : Portal.Size) is
+   procedure Set_Size (Window : Window_Id; Size : Bedrock.Screen.Size) is
    begin
       XResizeWindow (Display, Slots (Window).Handle,
                      unsigned (Size.Width), unsigned (Size.Height));
       XFlush (Display);
    end Set_Size;
 
-   function Get_Size (Window : Window_Id) return Portal.Size is
+   function Get_Size (Window : Window_Id) return Bedrock.Screen.Size is
      (Slots (Window).Size);
 
    procedure Show (Window : Window_Id) is
@@ -407,7 +407,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       for Y in 0 .. Frame.Height loop
          for X in 0 .. Frame.Width loop
             declare
-               C : constant Color := Frame.Pixels (Y, X);
+               C : constant Color := Frame.Data (Y, X);
             begin
                Data (I)     := Byte (C.B);
                Data (I + 1) := Byte (C.G);

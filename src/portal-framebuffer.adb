@@ -6,34 +6,8 @@ package body Portal.Framebuffer with SPARK_Mode is
 
    procedure Put (B : in out Buffer; P : Point; C : Color) is
    begin
-      B.Pixels (Row (P.Y), Column (P.X)) := C;
+      B.Data (Row (P.Y), Column (P.X)) := C;
    end Put;
-
-   -----------
-   -- Blend --
-   -----------
-
-   function Blend (Src, Dst : Color) return Color is
-      --  out = src * a + dst * (1 - a), a in 0 .. 255. Integer math,
-      --  rounded, division exact enough for 8 bits. All intermediate
-      --  values fit in 17 bits.
-      A  : constant Natural := Natural (Src.A);
-      NA : constant Natural := 255 - A;
-
-      function Mix (S, D : Channel) return Channel is
-        (Channel ((Natural (S) * A + Natural (D) * NA + 127) / 255));
-   begin
-      if A = 255 then
-         return Src;
-      elsif A = 0 then
-         return Dst;
-      else
-         return (R => Mix (Src.R, Dst.R),
-                 G => Mix (Src.G, Dst.G),
-                 B => Mix (Src.B, Dst.B),
-                 A => Channel (Natural'Min (255, A + Natural (Dst.A) * NA / 255)));
-      end if;
-   end Blend;
 
    -----------
    -- Clear --
@@ -44,14 +18,14 @@ package body Portal.Framebuffer with SPARK_Mode is
       for Y in 0 .. B.Height loop
          pragma Loop_Invariant
            (for all YY in 0 .. Y - 1 =>
-              (for all X in 0 .. B.Width => B.Pixels (YY, X) = C));
+              (for all X in 0 .. B.Width => B.Data (YY, X) = C));
          for X in 0 .. B.Width loop
             pragma Loop_Invariant
               (for all YY in 0 .. Y - 1 =>
-                 (for all XX in 0 .. B.Width => B.Pixels (YY, XX) = C));
+                 (for all XX in 0 .. B.Width => B.Data (YY, XX) = C));
             pragma Loop_Invariant
-              (for all XX in 0 .. X - 1 => B.Pixels (Y, XX) = C);
-            B.Pixels (Y, X) := C;
+              (for all XX in 0 .. X - 1 => B.Data (Y, XX) = C);
+            B.Data (Y, X) := C;
          end loop;
       end loop;
    end Clear;
@@ -107,7 +81,7 @@ package body Portal.Framebuffer with SPARK_Mode is
          for X in Column range Column (X0) .. Column (X1) loop
             pragma Loop_Invariant (B.Width = B.Width'Loop_Entry);
             pragma Loop_Invariant (B.Height = B.Height'Loop_Entry);
-            B.Pixels (Y, X) := Opaque;
+            B.Data (Y, X) := Opaque;
          end loop;
       end loop;
    end Fill;
@@ -130,7 +104,7 @@ package body Portal.Framebuffer with SPARK_Mode is
          for X in Column range Column (X0) .. Column (X1) loop
             pragma Loop_Invariant (B.Width = B.Width'Loop_Entry);
             pragma Loop_Invariant (B.Height = B.Height'Loop_Entry);
-            B.Pixels (Y, X) := Blend (C, B.Pixels (Y, X));
+            B.Data (Y, X) := Blend (C, B.Data (Y, X));
          end loop;
       end loop;
    end Fill_Blend;
@@ -165,7 +139,7 @@ package body Portal.Framebuffer with SPARK_Mode is
                SX : constant Column := Column (Integer (X) - Integer (At_Pos.X));
                SY : constant Row    := Row (Integer (Y) - Integer (At_Pos.Y));
             begin
-               Dst.Pixels (Y, X) := Blend (Src.Pixels (SY, SX), Dst.Pixels (Y, X));
+               Dst.Data (Y, X) := Blend (Src.Data (SY, SX), Dst.Data (Y, X));
             end;
          end loop;
       end loop;
