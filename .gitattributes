@@ -1,0 +1,5 @@
+# Sources are LF on every OS, whatever core.autocrlf says.
+# -gnatyg rejects CRLF line terminators and -gnatwe makes that an error,
+# so a Windows checkout with autocrlf=true does not compile.
+* text=auto eol=lf
+*.png binary
