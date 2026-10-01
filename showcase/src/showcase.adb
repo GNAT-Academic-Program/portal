@@ -10,7 +10,7 @@
 
 with Bedrock.Screen; use Bedrock.Screen;
 with Ada.Text_IO;        use Ada.Text_IO;
-with Portal;             use Portal;
+with Portal;
 with Portal.Backend;     use Portal.Backend;
 with Portal.Framebuffer; use Portal.Framebuffer;
 with Portal.Input;       use Portal.Input;
