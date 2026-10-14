@@ -225,7 +225,8 @@ package body Portal.Backend with SPARK_Mode => Off is
 
          when WM_MOUSEWHEEL =>
             declare
-               Delta_Raw : constant Integer_16 := To_I16 (Unsigned_16 ((W / 16#10000#) and 16#FFFF#));
+               Delta_Raw : constant Integer_16 :=
+                 To_I16 (Unsigned_16 ((W / 16#10000#) and 16#FFFF#));
             begin
                Enqueue ((Kind => Mouse_Wheel, Time => T, Window => Id,
                          Wheel_X => 0, Wheel_Y => Pixels (Integer (Delta_Raw) / 120),
@@ -245,8 +246,12 @@ package body Portal.Backend with SPARK_Mode => Off is
       M : aliased MSG;
    begin
       while PeekMessageA (M'Access, System.Null_Address, 0, 0, PM_REMOVE) /= 0 loop
-         if TranslateMessage (M'Access) = 0 then null; end if;
-         if DispatchMessageA (M'Access) = 0 then null; end if;
+         if TranslateMessage (M'Access) = 0 then
+            null;
+         end if;
+         if DispatchMessageA (M'Access) = 0 then
+            null;
+         end if;
       end loop;
    end Pump;
 
@@ -274,7 +279,9 @@ package body Portal.Backend with SPARK_Mode => Off is
    begin
       for W in Valid_Window_Id loop
          if Slots (W).Open then
-            if DestroyWindow (Slots (W).Handle) = 0 then null; end if;
+            if DestroyWindow (Slots (W).Handle) = 0 then
+               null;
+            end if;
             Slots (W).Open := False;
          end if;
       end loop;
@@ -303,7 +310,9 @@ package body Portal.Backend with SPARK_Mode => Off is
       if not Flags.Hidden then
          Style := Style or WS_VISIBLE;
       end if;
-      if AdjustWindowRect (R'Access, Style, 0) = 0 then null; end if;
+      if AdjustWindowRect (R'Access, Style, 0) = 0 then
+         null;
+      end if;
       for W in Valid_Window_Id loop
          if not Slots (W).Open then
             H := CreateWindowExA
@@ -323,20 +332,26 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Destroy_Window (Window : Window_Id) is
    begin
-      if DestroyWindow (Slots (Window).Handle) = 0 then null; end if;
+      if DestroyWindow (Slots (Window).Handle) = 0 then
+         null;
+      end if;
       Slots (Window).Open := False;
    end Destroy_Window;
 
    procedure Set_Title (Window : Window_Id; Title : String) is
       T : constant String := Title & ASCII.NUL;
    begin
-      if SetWindowTextA (Slots (Window).Handle, T'Address) = 0 then null; end if;
+      if SetWindowTextA (Slots (Window).Handle, T'Address) = 0 then
+         null;
+      end if;
    end Set_Title;
 
    procedure Set_Size (Window : Window_Id; Size : Bedrock.Screen.Size) is
       R : aliased Win_Rect := (0, 0, long (Size.Width), long (Size.Height));
    begin
-      if AdjustWindowRect (R'Access, WS_OVERLAPPEDWINDOW, 0) = 0 then null; end if;
+      if AdjustWindowRect (R'Access, WS_OVERLAPPEDWINDOW, 0) = 0 then
+         null;
+      end if;
       if SetWindowPos (Slots (Window).Handle, System.Null_Address, 0, 0,
                        int (R.Right - R.Left), int (R.Bottom - R.Top),
                        16#0002# + 16#0004#) = 0  --  SWP_NOMOVE | SWP_NOZORDER
@@ -349,12 +364,16 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Show (Window : Window_Id) is
    begin
-      if ShowWindow (Slots (Window).Handle, SW_SHOW) = 0 then null; end if;
+      if ShowWindow (Slots (Window).Handle, SW_SHOW) = 0 then
+         null;
+      end if;
    end Show;
 
    procedure Hide (Window : Window_Id) is
    begin
-      if ShowWindow (Slots (Window).Handle, SW_HIDE) = 0 then null; end if;
+      if ShowWindow (Slots (Window).Handle, SW_HIDE) = 0 then
+         null;
+      end if;
    end Hide;
 
    function Scale (Window : Window_Id) return Positive is
@@ -372,8 +391,11 @@ package body Portal.Backend with SPARK_Mode => Off is
       H    : constant Natural := Natural (Height (Frame));
       Data : Byte_Array (0 .. W * H * 4 - 1);
       I    : Natural := 0;
+      Header_Bytes : constant DWORD := BITMAPINFOHEADER'Size / 8;
+      --  Computed outside the aggregate: GNAT 16.1 crashes (decl.cc:489)
+      --  on Type'Size inside a nested aggregate that also uses others => <>.
       Info : aliased constant BITMAPINFO :=
-        (Header => (Size => BITMAPINFOHEADER'Size / 8, Width => long (W),
+        (Header => (Size => Header_Bytes, Width => long (W),
                     Height => -long (H), others => <>),
          Colors => 0);
       DC : constant HDC := GetDC (Slots (Window).Handle);
@@ -394,7 +416,9 @@ package body Portal.Backend with SPARK_Mode => Off is
       then
          null;
       end if;
-      if ReleaseDC (Slots (Window).Handle, DC) = 0 then null; end if;
+      if ReleaseDC (Slots (Window).Handle, DC) = 0 then
+         null;
+      end if;
    end Present;
 
    ---------------------------------------------------------------------
@@ -404,7 +428,11 @@ package body Portal.Backend with SPARK_Mode => Off is
    procedure Poll (E : out Event) is
    begin
       Pump;
-      if Q_Count > 0 then E := Dequeue; else E := No_Event; end if;
+      if Q_Count > 0 then
+         E := Dequeue;
+      else
+         E := No_Event;
+      end if;
    end Poll;
 
    procedure Wait (E : out Event; Timeout_Ms : Natural) is
@@ -463,12 +491,16 @@ package body Portal.Backend with SPARK_Mode => Off is
            when Not_Allowed => IDC_NO, when Busy => IDC_WAIT);
    begin
       Cursor_Cur := LoadCursorA (System.Null_Address, To_Address (Id));
-      if SetCursor (Cursor_Cur) = System.Null_Address then null; end if;
+      if SetCursor (Cursor_Cur) = System.Null_Address then
+         null;
+      end if;
    end Set_Cursor;
 
    procedure Set_Cursor_Visible (Visible : Boolean) is
    begin
-      if ShowCursor ((if Visible then 1 else 0)) = 0 then null; end if;
+      if ShowCursor ((if Visible then 1 else 0)) = 0 then
+         null;
+      end if;
    end Set_Cursor_Visible;
 
    procedure Get_Clipboard (Text : out String; Last : out Natural) is
