@@ -6,10 +6,10 @@ with Portal.Backend;     use Portal.Backend;
 with Portal.Framebuffer; use Portal.Framebuffer;
 with Portal.Input;       use Portal.Input;
 
-procedure Pong is
+procedure Demo is
 
    ------------------------------------------------------------------
-   -- Window and framebuffer
+   --  Window and framebuffer
    ------------------------------------------------------------------
 
    W_Px : constant := 640;
@@ -23,7 +23,7 @@ procedure Pong is
    Running : Boolean := True;
 
    ------------------------------------------------------------------
-   -- Game configuration
+   --  Game configuration
    ------------------------------------------------------------------
 
    Paddle_Width  : constant Extent := 12;
@@ -37,7 +37,7 @@ procedure Pong is
    Right_X : constant Pixels := W_Px - 32;
 
    ------------------------------------------------------------------
-   -- Game state
+   --  Game state
    ------------------------------------------------------------------
 
    Left_Y  : Pixels := 200;
@@ -52,7 +52,7 @@ procedure Pong is
    Right_Score : Natural := 0;
 
    ------------------------------------------------------------------
-   -- Update the score in the window title
+   --  Update the score in the window title
    ------------------------------------------------------------------
 
    procedure Update_Title is
@@ -64,7 +64,7 @@ procedure Pong is
    end Update_Title;
 
    ------------------------------------------------------------------
-   -- Reset ball to the middle
+   --  Reset ball to the middle
    ------------------------------------------------------------------
 
    procedure Reset_Ball is
@@ -72,19 +72,19 @@ procedure Pong is
       Ball_X := W_Px / 2 - Pixels (Ball_Size) / 2;
       Ball_Y := H_Px / 2 - Pixels (Ball_Size) / 2;
 
-      -- Reverse horizontal direction after each point
+      --  Reverse horizontal direction after each point
       Ball_DX := -Ball_DX;
       Ball_DY := 3;
    end Reset_Ball;
 
    ------------------------------------------------------------------
-   -- Move paddles according to keyboard state
+   --  Move paddles according to keyboard state
    ------------------------------------------------------------------
 
    procedure Update_Paddles is
    begin
 
-      -- Player 1: W and S
+      --  Player 1: W and S
       if Is_Key_Down (Key_W) then
          Left_Y := Left_Y - Paddle_Speed;
       end if;
@@ -93,7 +93,7 @@ procedure Pong is
          Left_Y := Left_Y + Paddle_Speed;
       end if;
 
-      -- Player 2: I and K
+      --  Player 2: I and K
       if Is_Key_Down (Key_I) then
          Right_Y := Right_Y - Paddle_Speed;
       end if;
@@ -102,7 +102,7 @@ procedure Pong is
          Right_Y := Right_Y + Paddle_Speed;
       end if;
 
-      -- Keep the paddles inside the window
+      --  Keep the paddles inside the window
       if Left_Y < 0 then
          Left_Y := 0;
       elsif Left_Y + Pixels (Paddle_Height) > H_Px then
@@ -118,29 +118,29 @@ procedure Pong is
    end Update_Paddles;
 
    ------------------------------------------------------------------
-   -- Ball movement, collisions, and scoring
+   --  Ball movement, collisions, and scoring
    ------------------------------------------------------------------
 
    procedure Update_Ball is
    begin
 
-      -- Move the ball
+      --  Move the ball
       Ball_X := Ball_X + Ball_DX;
       Ball_Y := Ball_Y + Ball_DY;
 
-      -- Collision with top wall
+      --  Collision with top wall
       if Ball_Y <= 0 then
          Ball_Y := 0;
          Ball_DY := abs Ball_DY;
       end if;
 
-      -- Collision with bottom wall
+      --  Collision with bottom wall
       if Ball_Y + Pixels (Ball_Size) >= H_Px then
          Ball_Y := H_Px - Pixels (Ball_Size);
          Ball_DY := -abs Ball_DY;
       end if;
 
-      -- Collision with left paddle
+      --  Collision with left paddle
       if Ball_DX < 0
         and then Ball_X <= Left_X + Pixels (Paddle_Width)
         and then Ball_X + Pixels (Ball_Size) >= Left_X
@@ -151,7 +151,7 @@ procedure Pong is
          Ball_DX := abs Ball_DX;
       end if;
 
-      -- Collision with right paddle
+      --  Collision with right paddle
       if Ball_DX > 0
         and then Ball_X + Pixels (Ball_Size) >= Right_X
         and then Ball_X <= Right_X + Pixels (Paddle_Width)
@@ -162,7 +162,7 @@ procedure Pong is
          Ball_DX := -abs Ball_DX;
       end if;
 
-      -- Player 2 scores
+      --  Player 2 scores
       if Ball_X + Pixels (Ball_Size) < 0 then
 
          Right_Score := Right_Score + 1;
@@ -170,7 +170,7 @@ procedure Pong is
          Update_Title;
          Reset_Ball;
 
-      -- Player 1 scores
+      --  Player 1 scores
       elsif Ball_X >= W_Px then
 
          Left_Score := Left_Score + 1;
@@ -183,16 +183,16 @@ procedure Pong is
    end Update_Ball;
 
    ------------------------------------------------------------------
-   -- Render the entire game
+   --  Render the entire game
    ------------------------------------------------------------------
 
    procedure Render is
    begin
 
-      -- Dark background
+      --  Dark background
       Clear (Frame, (20, 20, 30, 255));
 
-      -- Dashed center line
+      --  Dashed center line
       for I in 0 .. 7 loop
          Fill
             (Frame,
@@ -200,38 +200,38 @@ procedure Pong is
                (90, 90, 110, 255));
       end loop;
 
-      -- Left paddle (blue)
+      --  Left paddle (blue)
       Fill
         (Frame,
          ((Left_X, Left_Y), (Paddle_Width, Paddle_Height)),
          (80, 160, 255, 255));
 
-      -- Right paddle (orange)
+      --  Right paddle (orange)
       Fill
         (Frame,
          ((Right_X, Right_Y), (Paddle_Width, Paddle_Height)),
          (255, 170, 80, 255));
 
-      -- Ball (white)
+      --  Ball (white)
       Fill
         (Frame,
          ((Ball_X, Ball_Y), (Ball_Size, Ball_Size)),
          (255, 255, 255, 255));
 
-      -- Display framebuffer
+      --  Display framebuffer
       Present (Win, Frame);
 
    end Render;
 
    ------------------------------------------------------------------
-   -- Main application
+   --  Main application
    ------------------------------------------------------------------
 
 begin
 
    Put_Line ("Starting Ada Pong...");
 
-   -- Initialize the platform backend
+   --  Initialize the platform backend
    Initialize (OK);
 
    if not OK then
@@ -239,7 +239,7 @@ begin
       return;
    end if;
 
-   -- Create the Pong window
+   --  Create the Pong window
    Create_Window
      (Title  => "Ada Pong",
       Size   => (W_Px, H_Px),
@@ -262,7 +262,7 @@ begin
    Update_Title;
 
    ------------------------------------------------------------------
-   -- Game loop
+   --  Game loop
    ------------------------------------------------------------------
 
    while Running loop
@@ -290,11 +290,11 @@ begin
 
       exit when not Running;
 
-      -- Update game state
+      --  Update game state
       Update_Paddles;
       Update_Ball;
 
-      -- Draw the game
+      --  Draw the game
       Render;
 
       Sleep (16);
@@ -302,7 +302,7 @@ begin
    end loop;
 
    ------------------------------------------------------------------
-   -- Cleanup
+   --  Cleanup
    ------------------------------------------------------------------
 
    Put_Line ("Game over!");
@@ -312,4 +312,4 @@ begin
    Destroy_Window (Win);
    Finalize;
 
-end Pong;
+end Demo;
