@@ -16,7 +16,7 @@ jobs:
         run: |
           cd tests
           alr -n build
-          ./bin/tests
+          alr -n run
       - name: Showcase (runs headless, exits on synthetic Quit)
         run: |
           cd showcase
