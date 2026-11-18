@@ -26,8 +26,16 @@ package body Portal.Backend with SPARK_Mode => Off is
       Open   : Boolean := False;
       Handle : Xlib.Window := 0;
       Size   : Bedrock.Screen.Size;
+      Shape  : Cursor_Shape := Arrow;
    end record;
+
    Slots : array (Valid_Window_Id) of Window_Slot;
+
+   Cursor_Visible   : Boolean := True;
+   Invisible_Cursor : Xlib.Cursor := 0;
+
+   Cursor_Cache : array (Cursor_Shape) of Xlib.Cursor :=
+      [others => 0];
 
    Max_Queue : constant := 256;
    Queue     : array (1 .. Max_Queue) of Event;
@@ -48,6 +56,8 @@ package body Portal.Backend with SPARK_Mode => Off is
    function State_To_Mods (State : unsigned) return Modifiers;
    procedure Translate (Raw : aliased XEvent_Raw);
    procedure Pump;
+   function Create_Invisible_Cursor return Xlib.Cursor;
+   procedure Apply_Cursor (W : Window_Id);
 
    function Is_Initialized return Boolean is (Initialized);
    function Is_Open (W : Window_Id) return Boolean is
@@ -296,14 +306,37 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Finalize is
    begin
+      --  Destroy all open windows.
       for W in Valid_Window_Id loop
          if Slots (W).Open then
             XDestroyWindow (Display, Slots (W).Handle);
             Slots (W).Open := False;
          end if;
       end loop;
+
+      --  Release cached standard cursors.
+      for Shape in Cursor_Shape loop
+         if Cursor_Cache (Shape) /= 0 then
+            if XFreeCursor (Display, Cursor_Cache (Shape)) = 0 then
+               null;
+            end if;
+
+            Cursor_Cache (Shape) := 0;
+         end if;
+      end loop;
+
+      --  Release the invisible cursor.
+      if Invisible_Cursor /= 0 then
+         if XFreeCursor (Display, Invisible_Cursor) = 0 then
+            null;
+         end if;
+
+         Invisible_Cursor := 0;
+      end if;
+
       XCloseDisplay (Display);
       Display := Null_Display;
+      Cursor_Visible := True;
       Initialized := False;
    end Finalize;
 
@@ -340,11 +373,19 @@ package body Portal.Backend with SPARK_Mode => Off is
             Name := New_String (Title);
             XStoreName (Display, H, Name);
             Free (Name);
+            Slots (W) :=
+            (Open   => True,
+               Handle => H,
+               Size   => Size,
+               Shape  => Arrow);
+
+            Apply_Cursor (W);
+
             if not Flags.Hidden then
                XMapWindow (Display, H);
             end if;
+
             XFlush (Display);
-            Slots (W) := (Open => True, Handle => H, Size => Size);
             Window := W;
             return;
          end if;
@@ -494,21 +535,126 @@ package body Portal.Backend with SPARK_Mode => Off is
    --  Cursor, clipboard
    ---------------------------------------------------------------------
 
-   procedure Set_Cursor (Window : Window_Id; Shape : Cursor_Shape) is
-      --  X11 cursor font glyph numbers (cursorfont.h)
-      Glyph : constant unsigned :=
-        (case Shape is
-           when Arrow => 2, when I_Beam => 152, when Crosshair => 34,
-           when Hand => 60, when Resize_EW => 108, when Resize_NS => 116,
-           when Resize_NWSE => 14, when Resize_NESW => 12,
-           when Not_Allowed => 0, when Busy => 150);
+   function Create_Invisible_Cursor return Xlib.Cursor is
+      --  A zero bit means that the pixel is transparent.
+      Blank : aliased char := nul;
+
+      Black : aliased XColor :=
+      (Pixel => 0,
+         Red   => 0,
+         Green => 0,
+         Blue  => 0,
+         Flags => nul,
+         Pad   => nul);
+
+      Bitmap : Pixmap;
+      Result : Xlib.Cursor := 0;
    begin
-      XDefineCursor (Display, Slots (Window).Handle, XCreateFontCursor (Display, Glyph));
+      Bitmap := XCreateBitmapFromData
+      (Display,
+         XDefaultRootWindow (Display),
+         Blank'Address,
+         1, 1);
+
+      if Bitmap = 0 then
+         return 0;
+      end if;
+
+      Result := XCreatePixmapCursor
+      (Display,
+         Bitmap,
+         Bitmap,
+         Black'Access,
+         Black'Access,
+         0, 0);
+
+      --  The cursor has been created; the bitmap is no longer needed.
+      if XFreePixmap (Display, Bitmap) = 0 then
+         null;
+      end if;
+
+      return Result;
+   end Create_Invisible_Cursor;
+
+   procedure Apply_Cursor (W : Window_Id) is
+      C : Xlib.Cursor := 0;
+
+      Glyph : constant unsigned :=
+      (case Slots (W).Shape is
+         when Arrow       => 2,
+         when I_Beam      => 152,
+         when Crosshair   => 34,
+         when Hand        => 60,
+         when Resize_EW   => 108,
+         when Resize_NS   => 116,
+         when Resize_NWSE => 14,
+         when Resize_NESW => 12,
+         when Not_Allowed => 0,
+         when Busy        => 150);
+   begin
+      if not Slots (W).Open then
+         return;
+      end if;
+
+      if Cursor_Visible then
+         if Cursor_Cache (Slots (W).Shape) = 0 then
+            Cursor_Cache (Slots (W).Shape) :=
+            XCreateFontCursor (Display, Glyph);
+         end if;
+
+         C := Cursor_Cache (Slots (W).Shape);
+      else
+         if Invisible_Cursor = 0 then
+            Invisible_Cursor := Create_Invisible_Cursor;
+         end if;
+
+         C := Invisible_Cursor;
+      end if;
+
+      if C /= 0 then
+         XDefineCursor (Display, Slots (W).Handle, C);
+      else
+         XUndefineCursor (Display, Slots (W).Handle);
+      end if;
+   end Apply_Cursor;
+
+   procedure Set_Cursor
+      (Window : Window_Id;
+         Shape  : Cursor_Shape)
+   is
+   begin
+      if not Is_Open (Window) then
+         return;
+      end if;
+
+      --  Remember the requested shape even if the cursor is hidden.
+      Slots (Window).Shape := Shape;
+
+      Apply_Cursor (Window);
       XFlush (Display);
    end Set_Cursor;
 
-   procedure Set_Cursor_Visible (Visible : Boolean) is null;
-   --  Milestone: an invisible 1x1 pixmap cursor.
+   procedure Set_Cursor_Visible (Visible : Boolean) is
+   begin
+      if Cursor_Visible = Visible then
+         return;
+      end if;
+
+      Cursor_Visible := Visible;
+
+      if not Initialized then
+         return;
+      end if;
+
+      --  Apply the new visibility setting to every open window.
+      for W in Valid_Window_Id loop
+         if Slots (W).Open then
+            Apply_Cursor (W);
+         end if;
+      end loop;
+
+      XFlush (Display);
+   end Set_Cursor_Visible;
 
    procedure Get_Clipboard (Text : out String; Last : out Natural) is
       N : constant Natural := Natural'Min (Text'Length, Clipboard_Last);
