@@ -1,0 +1,43 @@
+Changing to object directory of "Demo": "/home/joshua-parfitt/projects/psu-portal/demo/obj/development/"
+/usr/bin/gcc-13 -c -x ada -gnatA -Og -ffunction-sections -fdata-sections -g -gnatwa -gnatw.X -gnatVa -gnaty3 -gnatya -gnatyA -gnatyB -gnatyb -gnatyc -gnaty-d -gnatye -gnatyf -gnatyh -gnatyi -gnatyI -gnatyk -gnatyl -gnatym -gnatyn -gnatyO -gnatyp -gnatyr -gnatyS -gnatyt -gnatyu -gnatyx -gnatW8 -gnatec=/tmp/GPR.18799/GNAT-TEMP-000003.TMP -gnatem=/tmp/GPR.18799/GNAT-TEMP-000004.TMP /home/joshua-parfitt/projects/psu-portal/demo/src/demo.adb
+demo.adb:9:11: warning: file name does not match unit name, should be "pong.adb" [enabled by default]
+demo.adb:12:07: (style) space required
+demo.adb:26:07: (style) space required
+demo.adb:40:07: (style) space required
+demo.adb:55:07: (style) space required
+demo.adb:67:07: (style) space required
+demo.adb:75:10: (style) space required
+demo.adb:81:07: (style) space required
+demo.adb:87:10: (style) space required
+demo.adb:96:10: (style) space required
+demo.adb:105:10: (style) space required
+demo.adb:121:07: (style) space required
+demo.adb:127:10: (style) space required
+demo.adb:131:10: (style) space required
+demo.adb:137:10: (style) space required
+demo.adb:143:10: (style) space required
+demo.adb:154:10: (style) space required
+demo.adb:165:10: (style) space required
+demo.adb:173:10: (style) space required
+demo.adb:186:07: (style) space required
+demo.adb:192:10: (style) space required
+demo.adb:195:10: (style) space required
+demo.adb:203:10: (style) space required
+demo.adb:209:10: (style) space required
+demo.adb:215:10: (style) space required
+demo.adb:221:10: (style) space required
+demo.adb:227:07: (style) space required
+demo.adb:234:07: (style) space required
+demo.adb:242:07: (style) space required
+demo.adb:265:07: (style) space required
+demo.adb:270:10: (style) space required
+demo.adb:294:10: (style) space required
+demo.adb:298:10: (style) space required
+demo.adb:301:10: (style) space required
+demo.adb:307:07: (style) space required
+bedrock-input.ads:68:38: error: illegal character, replaced by "("
+bedrock-input.ads:69:35: error: illegal character, replaced by "("
+bedrock-input.ads:124:40: error: illegal character, replaced by "("
+bedrock-input.ads:157:44: error: illegal character, replaced by "("
+gprbuild: *** compilation phase failed
+ERROR: Command ["gprbuild", "-P", "demo.gpr", "-XPORTAL_PORT=x11", "-p", "-f", "-v"] exited with code 4

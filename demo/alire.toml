@@ -7,3 +7,9 @@ maintainers = ["Jeremiah Michaels <jeremiah.michaels04@proton.me>"]
 licenses = "Apache-2.0"
 website = ""
 tags = []
+
+[[depends-on]]
+portal = "*"
+
+[[pins]]
+portal = { path = ".." }
