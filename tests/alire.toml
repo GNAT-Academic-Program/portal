@@ -1,16 +1,20 @@
-name = "portal_tests"
-description = "portal unit tests"
+name = "tests"
+description = "Test crate for the Portal library"
 version = "0.1.0-dev"
-authors = ["Olivier Henley"]
-maintainers = ["Olivier Henley <henley@adacore.com>"]
-maintainers-logins = ["ohenley"]
-licenses = "Apache-2.0"
 
-executables = ["tests"]
-project-files = ["portal_tests.gpr"]
+authors = ["Jeremiah Michaels"]
+maintainers = ["Jeremiah Michaels <jeremiah.michaels04@proton.me>"]
+licenses = "Apache-2.0"
+website = ""
+tags = []
+
+executables = ["test_runner"]
 
 [[depends-on]]
 portal = "*"
 
 [[pins]]
-portal = { path = ".." }
+portal = { path='..' }
+
+[[depends-on]]
+aunit = ">=25.0.0"

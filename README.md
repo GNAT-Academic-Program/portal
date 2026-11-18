@@ -91,12 +91,12 @@ alr build
 alr run
 ```
 
-Tests (null port; exit code is non-zero on failure):
+Tests, uses AUnit. (null port; exit code is non-zero on failure):
 
 ```
 cd tests
 alr build
-./bin/tests
+alr run
 ```
 
 SPARK, from the library directory:
