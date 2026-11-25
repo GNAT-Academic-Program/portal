@@ -205,6 +205,52 @@ private package Portal.Xlib is
      (D : Display_Ptr; Detectable : Bool; Supported : access Bool) return Bool
      with Import, Convention => C, External_Name => "XkbSetDetectableAutoRepeat";
 
+   ---------------------------------------------------------------------
+   --  XKB key names: every physical key has a 4 character name that
+   --  does not depend on the layout ("AD01" is the first letter of the
+   --  top row: Q on US, A on AZERTY). Layouts copied from
+   --  <X11/extensions/XKBstr.h>; Xkb_Names_Rec stops at Keys because
+   --  we only read through a pointer.
+   ---------------------------------------------------------------------
+
+   Xkb_Use_Core_Kbd   : constant := 16#0100#;
+   Xkb_Key_Names_Mask : constant := 2 ** 9;
+
+   subtype Xkb_Key_Name is String (1 .. 4);
+   type Xkb_Key_Names is array (Natural range 0 .. 255) of Xkb_Key_Name;
+   type Xkb_Atom_Block is array (1 .. 57) of unsigned_long
+     with Convention => C;  --  5 + 16 vmods + 32 indicators + 4 groups
+
+   type Xkb_Names_Rec is record
+      Atoms : Xkb_Atom_Block;
+      Keys  : System.Address;  --  Xkb_Key_Names, indexed by keycode
+   end record with Convention => C;
+   type Xkb_Names_Ptr is access all Xkb_Names_Rec with Convention => C;
+
+   type Xkb_Desc_Rec is record
+      Dpy          : System.Address;
+      Flags        : unsigned_short;
+      Device_Spec  : unsigned_short;
+      Min_Key_Code : unsigned_char;
+      Max_Key_Code : unsigned_char;
+      Ctrls        : System.Address;
+      Server       : System.Address;
+      Map          : System.Address;
+      Indicators   : System.Address;
+      Names        : Xkb_Names_Ptr;
+   end record with Convention => C;
+   type Xkb_Desc_Ptr is access all Xkb_Desc_Rec with Convention => C;
+
+   function XkbGetMap
+     (D : Display_Ptr; Which : unsigned; Device : unsigned) return Xkb_Desc_Ptr
+     with Import, Convention => C, External_Name => "XkbGetMap";
+   function XkbGetNames
+     (D : Display_Ptr; Which : unsigned; Desc : Xkb_Desc_Ptr) return int
+     with Import, Convention => C, External_Name => "XkbGetNames";
+   procedure XkbFreeKeyboard
+     (Desc : Xkb_Desc_Ptr; Which : unsigned; Free_Desc : Bool)
+     with Import, Convention => C, External_Name => "XkbFreeKeyboard";
+
    function XCreateFontCursor (D : Display_Ptr; Shape : unsigned) return Cursor
      with Import, Convention => C, External_Name => "XCreateFontCursor";
    procedure XDefineCursor (D : Display_Ptr; W : Window; C : Cursor)
