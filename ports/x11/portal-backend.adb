@@ -9,6 +9,7 @@ with Ada.Calendar;
 with Interfaces.C;         use Interfaces.C;
 with Interfaces.C.Strings; use Interfaces.C.Strings;
 with System;               use type System.Address;
+with Portal.Keymap;
 with Portal.Xlib;          use Portal.Xlib;
 
 package body Portal.Backend with SPARK_Mode => Off is
@@ -34,6 +35,8 @@ package body Portal.Backend with SPARK_Mode => Off is
    Q_Head, Q_Count : Natural := 0;
 
    Keys_Down : array (Key) of Boolean := [others => False];
+   Scancode_Map : array (Natural range 0 .. 255) of Key := [others => Key_Unknown];
+   --  X keycode -> physical key, filled from XKB at Initialize
    Mods      : Modifiers := No_Modifiers;
    Buttons   : Button_State := [others => False];
    Text_Enabled : array (Valid_Window_Id) of Boolean := [others => False];
@@ -45,6 +48,7 @@ package body Portal.Backend with SPARK_Mode => Off is
    procedure Enqueue (E : Event);
    function Dequeue return Event;
    function To_Key (Sym : XID) return Key;
+   procedure Build_Scancode_Map;
    function State_To_Mods (State : unsigned) return Modifiers;
    procedure Translate (Raw : aliased XEvent_Raw);
    procedure Pump;
@@ -127,6 +131,28 @@ package body Portal.Backend with SPARK_Mode => Off is
       end case;
    end To_Key;
 
+   --  Ask the server for its key names and fill Scancode_Map. If XKB is
+   --  missing the map stays empty and Translate falls back to keysyms.
+   procedure Build_Scancode_Map is
+      Desc : constant Xkb_Desc_Ptr := XkbGetMap (Display, 0, Xkb_Use_Core_Kbd);
+   begin
+      if Desc = null then
+         return;
+      end if;
+      if XkbGetNames (Display, Xkb_Key_Names_Mask, Desc) = 0
+        and then Desc.Names /= null
+      then
+         declare
+            Names : Xkb_Key_Names with Import, Address => Desc.Names.Keys;
+         begin
+            for Code in Natural (Desc.Min_Key_Code) .. Natural (Desc.Max_Key_Code) loop
+               Scancode_Map (Code) := Portal.Keymap.Key_From_Name (Names (Code));
+            end loop;
+         end;
+      end if;
+      XkbFreeKeyboard (Desc, 0, 1);
+   end Build_Scancode_Map;
+
    function State_To_Mods (State : unsigned) return Modifiers is
      ((Shift     => (State and 1) /= 0,
        Caps_Lock => (State and 2) /= 0,
@@ -156,8 +182,12 @@ package body Portal.Backend with SPARK_Mode => Off is
       case Any.Kind is
          when Key_Press | Key_Release =>
             declare
-               Sym : constant XID := XLookupKeysym (KE'Access, 0);
-               K   : constant Key := To_Key (Sym);
+               Sym  : constant XID := XLookupKeysym (KE'Access, 0);
+               Scan : constant Key :=
+                 (if KE.Keycode <= 255 then Scancode_Map (Natural (KE.Keycode))
+                  else Key_Unknown);
+               --  Physical key first; keysym only for keys we did not map
+               K    : constant Key := (if Scan /= Key_Unknown then Scan else To_Key (Sym));
                Down : constant Boolean := Any.Kind = Key_Press;
             begin
                Mods := State_To_Mods (KE.State);
@@ -290,6 +320,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       if XkbSetDetectableAutoRepeat (Display, 1, Supported'Access) = 0 then
          null;  --  repeats will show as release+press; acceptable
       end if;
+      Build_Scancode_Map;
       Initialized := True;
       Success := True;
    end Initialize;
