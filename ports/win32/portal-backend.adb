@@ -96,15 +96,11 @@ package body Portal.Backend with SPARK_Mode => Off is
    procedure Reset_State;
    function TrackMouseEvent (Info : access TRACK_MOUSE_EVENT) return BOOL
      with Import, Convention => Stdcall, External_Name => "TrackMouseEvent";
-      function Native_Window_From_Point
+   function Native_Window_From_Point
      (P : Cursor_Point) return HWND
      with Import, Convention => Stdcall,
           External_Name => "WindowFromPoint";
 
-   function Native_Get_Client_Rect (H : HWND; R : access Win_Rect) return BOOL
-     with Import, Convention => Stdcall, External_Name => "GetClientRect";
-   function Native_Window_From_Point (P : Cursor_Point) return HWND
-     with Import, Convention => Stdcall, External_Name => "WindowFromPoint";
    function Native_Get_Client_Rect (H : HWND; R : access Win_Rect) return BOOL
      with Import, Convention => Stdcall, External_Name => "GetClientRect";
    function Mouse_Delta (Current, Previous : Pixels) return Pixels;
@@ -628,7 +624,7 @@ package body Portal.Backend with SPARK_Mode => Off is
                    Wheel_At => (Lo (L), Hi (L))));
             end;
             return 0;
-         
+
          when WM_SETCURSOR =>
             if (L and 16#FFFF#) = HTCLIENT then
                Apply_Cursor (Id);
