@@ -33,6 +33,8 @@ procedure Showcase is
    Mouse : Point := (0, 0);
    Frames : Natural := 0;
    Running : Boolean := True;
+   Cursor_Visible : Boolean := True;
+   Cursor_Is_Hand : Boolean := True;
 
    procedure Log (S : String) is
    begin
@@ -53,6 +55,13 @@ begin
       return;
    end if;
    Set_Text_Input (Win, True);
+   --  Cursor visibility acceptance test
+   Set_Cursor (Win, Hand);
+
+   Log ("Cursor test controls:");
+   Log ("  V      - Toggle cursor visibility");
+   Log ("  C      - Toggle Hand / I-beam cursor shape");
+   Log ("  Escape - Quit");
 
    while Running loop
       --  Drain the queue
@@ -63,9 +72,30 @@ begin
             when Quit | Window_Close =>
                Log ("quit"); Running := False;
             when Key_Down =>
-               Log ("key down " & E.Key'Image & (if E.Repeat then " (repeat)" else ""));
+               Log ("key down " & E.Key'Image
+                  & (if E.Repeat then " (repeat)" else ""));
+
                if E.Key = Key_Escape then
                   Running := False;
+
+               elsif E.Key = Key_V and then not E.Repeat then
+                  --  Toggle cursor visibility.
+                  Cursor_Visible := not Cursor_Visible;
+                  Set_Cursor_Visible (Cursor_Visible);
+
+                  Log ("cursor visible: " & Cursor_Visible'Image);
+
+               elsif E.Key = Key_C and then not E.Repeat then
+                  --  Change the cursor shape, even while hidden.
+                  Cursor_Is_Hand := not Cursor_Is_Hand;
+
+                  if Cursor_Is_Hand then
+                     Set_Cursor (Win, Hand);
+                     Log ("cursor shape: Hand");
+                  else
+                     Set_Cursor (Win, I_Beam);
+                     Log ("cursor shape: I-beam");
+                  end if;
                end if;
             when Key_Up =>
                Log ("key up   " & E.Key'Image);
