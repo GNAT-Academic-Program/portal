@@ -71,9 +71,19 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Set_Title (Window : Window_Id; Title : String) is null;
 
-   procedure Set_Size (Window : Window_Id; Size : Bedrock.Screen.Size) is
+   procedure Set_Size
+     (Window : Window_Id; Size : Bedrock.Screen.Size)
+   is
    begin
-      Sizes (Window) := Size;
+      if Sizes (Window) /= Size then
+         Sizes (Window) := Size;
+
+         Push
+           ((Kind => Window_Resized,
+             Time => Now,
+             Window => Window,
+             Size => Size));
+      end if;
    end Set_Size;
 
    function Get_Size (Window : Window_Id) return Bedrock.Screen.Size is (Sizes (Window));

@@ -29,6 +29,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       Last_X        : Pixels := 0;
       Last_Y        : Pixels := 0;
       Shape         : Cursor_Shape := Arrow;
+      Style         : DWORD := WS_OVERLAPPEDWINDOW;
    end record;
    Slots : array (Valid_Window_Id) of Window_Slot;
 
@@ -423,17 +424,40 @@ package body Portal.Backend with SPARK_Mode => Off is
             return 0;
 
          when WM_SIZE =>
+            --  SIZE_MINIMIZED = 1.
+            --  Preserve the last usable framebuffer dimensions.
+            if W = 1 then
+               Slots (Id).Have_Mouse := False;
+               return 0;
+            end if;
+
             declare
-               S : constant Bedrock.Screen.Size :=
-                 (Extent (Lo (L)), Extent (Hi (L)));
+               R : aliased Win_Rect;
             begin
-               if S /= Slots (Id).Size then
-                  Slots (Id).Size := S;
-                  Enqueue
-                    ((Kind => Window_Resized, Time => T,
-                      Window => Id, Size => S));
+               if Native_Get_Client_Rect (H, R'Access) /= 0
+                 and then R.Right > 0
+                 and then R.Bottom > 0
+                 and then R.Right <= long (Extent'Last)
+                 and then R.Bottom <= long (Extent'Last)
+               then
+                  declare
+                     S : constant Bedrock.Screen.Size :=
+                       (Extent (R.Right), Extent (R.Bottom));
+                  begin
+                     if S /= Slots (Id).Size then
+                        Slots (Id).Size := S;
+                        Slots (Id).Have_Mouse := False;
+
+                        Enqueue
+                          ((Kind => Window_Resized,
+                            Time => T,
+                            Window => Id,
+                            Size => S));
+                     end if;
+                  end;
                end if;
             end;
+
             return 0;
 
          when WM_PAINT =>
@@ -701,7 +725,7 @@ package body Portal.Backend with SPARK_Mode => Off is
          Style := Style or WS_VISIBLE;
       end if;
       if AdjustWindowRect (R'Access, Style, 0) = 0 then
-         null;
+         return;
       end if;
       for W in Valid_Window_Id loop
          if not Slots (W).Open then
@@ -717,6 +741,7 @@ package body Portal.Backend with SPARK_Mode => Off is
               (Open   => True,
                Handle => H,
                Size   => Size,
+               Style  => Style,
                others => <>);
             Window := W;
             return;
@@ -740,6 +765,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       Slots (Window).Last_X        := 0;
       Slots (Window).Last_Y        := 0;
       Slots (Window).Shape := Arrow;
+      Slots (Window).Style := WS_OVERLAPPEDWINDOW;
    end Destroy_Window;
 
    procedure Set_Title (Window : Window_Id; Title : String) is
@@ -750,15 +776,29 @@ package body Portal.Backend with SPARK_Mode => Off is
       end if;
    end Set_Title;
 
-   procedure Set_Size (Window : Window_Id; Size : Bedrock.Screen.Size) is
-      R : aliased Win_Rect := (0, 0, long (Size.Width), long (Size.Height));
+   procedure Set_Size
+     (Window : Window_Id; Size : Bedrock.Screen.Size)
+   is
+      R : aliased Win_Rect :=
+        (0, 0, long (Size.Width), long (Size.Height));
    begin
-      if AdjustWindowRect (R'Access, WS_OVERLAPPEDWINDOW, 0) = 0 then
-         null;
+      if Size.Width = 0 or else Size.Height = 0 then
+         return;
       end if;
-      if SetWindowPos (Slots (Window).Handle, System.Null_Address, 0, 0,
-                       int (R.Right - R.Left), int (R.Bottom - R.Top),
-                       16#0002# + 16#0004#) = 0  --  SWP_NOMOVE | SWP_NOZORDER
+
+      if AdjustWindowRect
+        (R'Access, Slots (Window).Style, 0) = 0
+      then
+         return;
+      end if;
+
+      if SetWindowPos
+        (Slots (Window).Handle,
+         System.Null_Address,
+         0, 0,
+         int (R.Right - R.Left),
+         int (R.Bottom - R.Top),
+         16#0002# + 16#0004#) = 0
       then
          null;
       end if;
@@ -783,7 +823,15 @@ package body Portal.Backend with SPARK_Mode => Off is
    end Hide;
 
    function Scale (Window : Window_Id) return Positive is
-     (Positive (GetDpiForWindow (Slots (Window).Handle)) * 100 / 96);
+      Dpi : constant UINT :=
+        GetDpiForWindow (Slots (Window).Handle);
+   begin
+      if Dpi = 0 then
+         return 100;
+      end if;
+
+      return Positive'Max (1, Positive (Dpi) * 100 / 96);
+   end Scale;
 
    ---------------------------------------------------------------------
    --  Present: RGBA -> BGRX top-down DIB, StretchDIBits 1:1

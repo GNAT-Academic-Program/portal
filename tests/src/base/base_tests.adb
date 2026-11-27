@@ -32,6 +32,9 @@ package body Base_Tests is
    procedure Test_Cursor_Lifecycle
      (T : in out AUnit.Test_Cases.Test_Case'Class);
 
+   procedure Test_Window_Resize
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
    procedure Test_Types (T : in out AUnit.Test_Cases.Test_Case'Class) is
       --  This only needs done if the test case is not used
       pragma Unreferenced (T);
@@ -771,6 +774,92 @@ package body Base_Tests is
          raise;
    end Test_Cursor_Lifecycle;
 
+   procedure Test_Window_Resize
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+
+      OK : Boolean;
+      W  : Window_Id;
+      E  : Event;
+
+      procedure Expect_Resize
+        (Expected : Bedrock.Screen.Size);
+
+      procedure Expect_Resize
+        (Expected : Bedrock.Screen.Size)
+      is
+      begin
+         for I in 1 .. 100 loop
+            Wait (E, 20);
+
+            if E.Kind = Window_Resized
+              and then E.Window = W
+              and then E.Size = Expected
+            then
+               AUnit.Assertions.Assert
+                 (Get_Size (W) = Expected,
+                  "Incorrect size after resize");
+
+               return;
+            end if;
+         end loop;
+
+         AUnit.Assertions.Assert
+           (False, "Expected resize event was not received");
+      end Expect_Resize;
+
+   begin
+      Initialize (OK);
+
+      AUnit.Assertions.Assert
+        (OK, "Initialization failed");
+
+      Create_Window
+        ("PAL Resize Test", (320, 240),
+         (Hidden => True,
+          Resizable => True,
+          others => <>), W);
+
+      AUnit.Assertions.Assert
+        (W /= No_Window, "Window creation failed");
+
+      AUnit.Assertions.Assert
+        (Get_Size (W) = (320, 240),
+         "Incorrect initial window size");
+
+      --  Increase both dimensions.
+      Set_Size (W, (640, 480));
+      Expect_Resize ((640, 480));
+
+      --  Decrease both dimensions.
+      Set_Size (W, (400, 300));
+      Expect_Resize ((400, 300));
+
+      --  Resize to a non-square aspect ratio.
+      Set_Size (W, (800, 400));
+      Expect_Resize ((800, 400));
+
+      --  Exercise the DPI scale query.
+      AUnit.Assertions.Assert
+        (Scale (W) in 50 .. 1000, "Unexpected DPI scale");
+
+      Destroy_Window (W);
+
+      AUnit.Assertions.Assert
+        (not Is_Open (W), "Window destruction failed");
+
+      Finalize;
+
+   exception
+      when others =>
+         if Is_Initialized then
+            Finalize;
+         end if;
+
+         raise;
+   end Test_Window_Resize;
+
    --  All tests must be registered in this method to run
    overriding procedure Register_Tests (T : in out Base_Test) is
    begin
@@ -792,6 +881,8 @@ package body Base_Tests is
          (T, Test_Physical_Keymap'Access, "Test Physical Keymap");
       AUnit.Test_Cases.Registration.Register_Routine
         (T, Test_Cursor_Lifecycle'Access, "Test Cursor Lifecycle");
+      AUnit.Test_Cases.Registration.Register_Routine
+        (T, Test_Window_Resize'Access, "Test Window Resize");
       if Ada.Environment_Variables.Value
         ("PORTAL_TEST_X11_INPUT", "") = "1"
       then

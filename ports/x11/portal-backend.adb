@@ -358,14 +358,27 @@ package body Portal.Backend with SPARK_Mode => Off is
          when Unmap_Notify => Enqueue ((Kind => Window_Hidden, Time => T, Window => W));
 
          when Configure_Notify =>
-            declare
-               S  : constant Bedrock.Screen.Size := (Extent (CE.Width), Extent (CE.Height));
-            begin
-               if S /= Slots (W).Size then
-                  Slots (W).Size := S;
-                  Enqueue ((Kind => Window_Resized, Time => T, Window => W, Size => S));
-               end if;
-            end;
+            if CE.Width > 0
+              and then CE.Height > 0
+              and then CE.Width <= int (Extent'Last)
+              and then CE.Height <= int (Extent'Last)
+            then
+               declare
+                  S : constant Bedrock.Screen.Size :=
+                    (Extent (CE.Width), Extent (CE.Height));
+               begin
+                  if S /= Slots (W).Size then
+                     Slots (W).Size := S;
+                     Slots (W).Have_Mouse := False;
+
+                     Enqueue
+                       ((Kind => Window_Resized,
+                         Time => T,
+                         Window => W,
+                         Size => S));
+                  end if;
+               end;
+            end if;
 
          when Client_Message =>
             begin
@@ -524,6 +537,9 @@ package body Portal.Backend with SPARK_Mode => Off is
               (Display, XDefaultRootWindow (Display), 0, 0,
                unsigned (Size.Width), unsigned (Size.Height), 0,
                XBlackPixel (Display, Screen), XBlackPixel (Display, Screen));
+            if H = 0 then
+               return;
+            end if;
             XSelectInput
               (Display, H,
                Key_Press_Mask + Key_Release_Mask + Button_Press_Mask
@@ -580,10 +596,18 @@ package body Portal.Backend with SPARK_Mode => Off is
       XFlush (Display);
    end Set_Title;
 
-   procedure Set_Size (Window : Window_Id; Size : Bedrock.Screen.Size) is
+   procedure Set_Size
+     (Window : Window_Id; Size : Bedrock.Screen.Size)
+   is
    begin
-      XResizeWindow (Display, Slots (Window).Handle,
-                     unsigned (Size.Width), unsigned (Size.Height));
+      if Size.Width = 0 or else Size.Height = 0 then
+         return;
+      end if;
+
+      XResizeWindow
+        (Display, Slots (Window).Handle,
+         unsigned (Size.Width), unsigned (Size.Height));
+
       XFlush (Display);
    end Set_Size;
 
