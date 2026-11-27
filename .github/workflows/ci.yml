@@ -3,58 +3,186 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
+  # --------------------------------------------------
+  # Null backend
+  # --------------------------------------------------
   null-port:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      PORTAL_PORT: "null"
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: alire-project/setup-alire@v4
-      - name: Build library (null port)
+
+      - name: Build library
         run: alr -n build
-      - name: Tests
+
+      - name: Build test executable
+        working-directory: tests
+        run: alr -n build
+
+      - name: Unit tests
+        working-directory: tests
+        env:
+          PORTAL_TEST_SUITE: unit
+        run: ./bin/test_runner
+
+      - name: Null integration tests
+        working-directory: tests
+        env:
+          PORTAL_TEST_SUITE: integration
+        run: ./bin/test_runner
+
+      - name: Build and run Showcase
+        working-directory: showcase
+        shell: bash
         run: |
-          cd tests
           alr -n build
-          alr -n run
-      - name: Showcase (runs headless, exits on synthetic Quit)
+          timeout 30s ./bin/showcase | tee showcase.log
+          grep -q "^frames:" showcase.log
+
+      - name: Build and run Pong
+        working-directory: demo
         run: |
-          cd showcase
           alr -n build
-          alr -n run
+          timeout 30s ./bin/demo
+
       - name: SPARK flow analysis
         run: |
           alr -n with gnatprove
           alr -n exec -- gnatprove -P portal.gpr --mode=flow --checks-as-errors=on
 
+  # --------------------------------------------------
+  # X11 backend
+  # --------------------------------------------------
   x11-port:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     env:
       PORTAL_PORT: x11
+
     steps:
       - uses: actions/checkout@v4
-      - uses: alire-project/setup-alire@v4
-      - run: sudo apt-get install -y libx11-dev xvfb
-      - name: Build library and showcase (x11 port)
-        run: |
-          alr -n build
-          cd showcase && alr -n build
-      - name: Showcase opens a window under Xvfb
-        run: |
-          cd showcase
-          xvfb-run -a timeout 5 ./bin/showcase || test $? -eq 124
 
+      - uses: alire-project/setup-alire@v4
+
+      - name: Install X11 dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev \
+            xvfb \
+            xauth \
+            xdotool \
+            x11-xkb-utils \
+            xkb-data
+
+      - name: Build library
+        run: alr -n build
+
+      - name: Build test executable
+        working-directory: tests
+        run: alr -n build
+
+      - name: X11 integration tests (US keyboard)
+        working-directory: tests
+        env:
+          PORTAL_TEST_SUITE: integration
+          PORTAL_TEST_X11_INPUT: "1"
+          PORTAL_TEST_X11_LAYOUT: us
+        run: |
+          timeout 60s xvfb-run -a \
+            -s "-screen 0 1280x1024x24 -noreset" \
+            sh -ec 'setxkbmap -layout us && ./bin/test_runner'
+
+      - name: X11 integration tests (French keyboard)
+        working-directory: tests
+        env:
+          PORTAL_TEST_SUITE: integration
+          PORTAL_TEST_X11_INPUT: "1"
+          PORTAL_TEST_X11_LAYOUT: fr
+        run: |
+          timeout 60s xvfb-run -a \
+            -s "-screen 0 1280x1024x24 -noreset" \
+            sh -ec 'setxkbmap -layout fr && ./bin/test_runner'
+
+      - name: Unsupported pixel format
+        working-directory: tests
+        env:
+          PORTAL_TEST_SUITE: unsupported-format
+        run: |
+          timeout 30s xvfb-run -a \
+            -s "-screen 0 1280x1024x16 -noreset" \
+            ./bin/test_runner
+
+      - name: Build Showcase
+        working-directory: showcase
+        run: alr -n build
+
+      - name: Showcase system smoke test
+        working-directory: showcase
+        run: |
+          timeout 30s xvfb-run -a \
+            -s "-screen 0 1280x1024x24 -noreset" \
+            bash -ec '
+              ./bin/showcase &
+              pid=$!
+
+              trap "kill $pid 2>/dev/null || true" EXIT
+
+              wid=$(xdotool search --sync --onlyvisible \
+                --name "^portal showcase$" | head -n 1)
+
+              xdotool windowfocus --sync "$wid"
+              xdotool key Escape
+
+              wait "$pid"
+            '
+
+      - name: Build Pong
+        working-directory: demo
+        run: alr -n build
+
+  # --------------------------------------------------
+  # Win32 backend
+  # --------------------------------------------------
   win32-port:
     runs-on: windows-latest
+    timeout-minutes: 20
+
     env:
       PORTAL_PORT: win32
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: alire-project/setup-alire@v4
-      - name: Build library and showcase (win32 port)
-        run: |
-          alr -n build
-          cd showcase
-          alr -n build
-      # No display on the runner; a build is the check. Run it on a
-      # real Windows machine to see the window.
+
+      - name: Build library
+        run: alr -n build
+
+      - name: Build test executable
+        working-directory: tests
+        run: alr -n build
+
+      - name: Unit tests
+        working-directory: tests
+        env:
+          PORTAL_TEST_SUITE: unit
+        run: .\bin\test_runner.exe
+
+      - name: Build Showcase
+        working-directory: showcase
+        run: alr -n build
+
+      - name: Build Pong
+        working-directory: demo
+        run: alr -n build
