@@ -28,6 +28,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       Mouse_Tracked : Boolean := False;
       Last_X        : Pixels := 0;
       Last_Y        : Pixels := 0;
+      Shape         : Cursor_Shape := Arrow;
    end record;
    Slots : array (Valid_Window_Id) of Window_Slot;
 
@@ -38,13 +39,16 @@ package body Portal.Backend with SPARK_Mode => Off is
    Keys_Down : array (Key) of Boolean := [others => False];
    Buttons   : Button_State := [others => False];
    Text_Enabled : array (Valid_Window_Id) of Boolean := [others => False];
-   Cursor_Cur : HCURSOR := System.Null_Address;
+   Cursor_Visible : Boolean := True;
 
    Clipboard      : String (1 .. Max_Clipboard);
    Clipboard_Last : Natural := 0;
 
    WM_MOUSELEAVE : constant UINT := 16#02A3#;
    TME_LEAVE     : constant DWORD := 16#00000002#;
+
+   WM_SETCURSOR : constant UINT := 16#0020#;
+   HTCLIENT     : constant := 1;
 
    type TRACK_MOUSE_EVENT is record
       Size       : DWORD;
@@ -53,6 +57,12 @@ package body Portal.Backend with SPARK_Mode => Off is
       Hover_Time : DWORD;
    end record
      with Convention => C;
+
+   type Cursor_Point is record
+      X : long;
+      Y : long;
+   end record
+     with Convention => C_Pass_By_Copy;
 
    function To_Address (N : Integer) return System.Address is
      (System'To_Address (N));
@@ -74,8 +84,21 @@ package body Portal.Backend with SPARK_Mode => Off is
    procedure Reset_State;
    function TrackMouseEvent (Info : access TRACK_MOUSE_EVENT) return BOOL
      with Import, Convention => Stdcall, External_Name => "TrackMouseEvent";
-   function Mouse_Delta
-     (Current, Previous : Pixels) return Pixels;
+      function Native_Window_From_Point
+     (P : Cursor_Point) return HWND
+     with Import, Convention => Stdcall,
+          External_Name => "WindowFromPoint";
+
+   function Native_Get_Client_Rect (H : HWND; R : access Win_Rect) return BOOL
+     with Import, Convention => Stdcall, External_Name => "GetClientRect";
+   function Native_Window_From_Point (P : Cursor_Point) return HWND
+     with Import, Convention => Stdcall, External_Name => "WindowFromPoint";
+   function Native_Get_Client_Rect (H : HWND; R : access Win_Rect) return BOOL
+     with Import, Convention => Stdcall, External_Name => "GetClientRect";
+   function Mouse_Delta (Current, Previous : Pixels) return Pixels;
+
+   procedure Apply_Cursor (Window : Window_Id);
+   procedure Refresh_Cursor;
 
    procedure Enqueue (E : Event) is
    begin
@@ -323,6 +346,69 @@ package body Portal.Backend with SPARK_Mode => Off is
               (Integer (Pixels'Last), Difference)));
    end Mouse_Delta;
 
+   procedure Apply_Cursor (Window : Window_Id) is
+      C : HCURSOR := System.Null_Address;
+
+      Id : constant Integer :=
+        (case Slots (Window).Shape is
+           when Arrow       => IDC_ARROW,
+           when I_Beam      => IDC_IBEAM,
+           when Crosshair   => IDC_CROSS,
+           when Hand        => IDC_HAND,
+           when Resize_EW   => IDC_SIZEWE,
+           when Resize_NS   => IDC_SIZENS,
+           when Resize_NWSE => IDC_SIZENWSE,
+           when Resize_NESW => IDC_SIZENESW,
+           when Not_Allowed => IDC_NO,
+           when Busy        => IDC_WAIT);
+   begin
+      if Cursor_Visible then
+         C := LoadCursorA
+           (System.Null_Address, To_Address (Id));
+
+         if C = System.Null_Address then
+            C := LoadCursorA
+              (System.Null_Address, To_Address (IDC_ARROW));
+         end if;
+      end if;
+
+      if SetCursor (C) = System.Null_Address then
+         null;
+      end if;
+   end Apply_Cursor;
+
+   procedure Refresh_Cursor is
+      P  : aliased Win_Point;
+      R  : aliased Win_Rect;
+      H  : HWND;
+      Id : Window_Id;
+   begin
+      if GetCursorPos (P'Access) = 0 then
+         return;
+      end if;
+
+      H := Native_Window_From_Point ((P.X, P.Y));
+      Id := Id_Of (H);
+
+      if Id = No_Window then
+         return;
+      end if;
+
+      if ScreenToClient (H, P'Access) = 0 then
+         return;
+      end if;
+
+      if Native_Get_Client_Rect (H, R'Access) = 0 then
+         return;
+      end if;
+
+      if P.X >= R.Left and then P.X < R.Right
+        and then P.Y >= R.Top and then P.Y < R.Bottom
+      then
+         Apply_Cursor (Id);
+      end if;
+   end Refresh_Cursor;
+
    function Wnd_Proc (H : HWND; Msg : UINT; W : WPARAM; L : LPARAM) return LRESULT is
       Id : constant Window_Id := Id_Of (H);
       T  : constant Ticks := Now;
@@ -505,6 +591,14 @@ package body Portal.Backend with SPARK_Mode => Off is
                    Wheel_At => (Lo (L), Hi (L))));
             end;
             return 0;
+         
+         when WM_SETCURSOR =>
+            if (L and 16#FFFF#) = HTCLIENT then
+               Apply_Cursor (Id);
+               return 1;
+            end if;
+
+            return DefWindowProcA (H, Msg, W, L);
 
          when WM_DESTROY =>
             return 0;
@@ -544,7 +638,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       Buttons        := [others => False];
       Text_Enabled   := [others => False];
       Clipboard_Last := 0;
-      Cursor_Cur     := System.Null_Address;
+      Cursor_Visible := True;
    end Reset_State;
 
    procedure Initialize (Success : out Boolean) is
@@ -565,6 +659,7 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Finalize is
    begin
+      Set_Cursor_Visible (True);
       --  Destroy all remaining windows.
       for W in Valid_Window_Id loop
          if Slots (W).Open then
@@ -644,6 +739,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       Slots (Window).Mouse_Tracked := False;
       Slots (Window).Last_X        := 0;
       Slots (Window).Last_Y        := 0;
+      Slots (Window).Shape := Arrow;
    end Destroy_Window;
 
    procedure Set_Title (Window : Window_Id; Title : String) is
@@ -788,27 +884,29 @@ package body Portal.Backend with SPARK_Mode => Off is
       Text_Enabled (Window) := Enabled;
    end Set_Text_Input;
 
-   procedure Set_Cursor (Window : Window_Id; Shape : Cursor_Shape) is
-      pragma Unreferenced (Window);
-      --  Win32 cursors are per-thread, not per-window; a WM_SETCURSOR
-      --  handler that re-applies Cursor_Cur is a milestone.
-      Id : constant Integer :=
-        (case Shape is
-           when Arrow => IDC_ARROW, when I_Beam => IDC_IBEAM, when Crosshair => IDC_CROSS,
-           when Hand => IDC_HAND, when Resize_EW => IDC_SIZEWE, when Resize_NS => IDC_SIZENS,
-           when Resize_NWSE => IDC_SIZENWSE, when Resize_NESW => IDC_SIZENESW,
-           when Not_Allowed => IDC_NO, when Busy => IDC_WAIT);
+   procedure Set_Cursor
+     (Window : Window_Id; Shape : Cursor_Shape)
+   is
    begin
-      Cursor_Cur := LoadCursorA (System.Null_Address, To_Address (Id));
-      if SetCursor (Cursor_Cur) = System.Null_Address then
-         null;
+      if not Is_Open (Window) then
+         return;
       end if;
+
+      Slots (Window).Shape := Shape;
+
+      Refresh_Cursor;
    end Set_Cursor;
 
    procedure Set_Cursor_Visible (Visible : Boolean) is
    begin
-      if ShowCursor ((if Visible then 1 else 0)) = 0 then
-         null;
+      if Cursor_Visible = Visible then
+         return;
+      end if;
+
+      Cursor_Visible := Visible;
+
+      if Initialized then
+         Refresh_Cursor;
       end if;
    end Set_Cursor_Visible;
 

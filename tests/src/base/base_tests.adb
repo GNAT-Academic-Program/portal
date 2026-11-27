@@ -29,6 +29,9 @@ package body Base_Tests is
    procedure Test_X11_Mouse_Motion
      (T : in out AUnit.Test_Cases.Test_Case'Class);
 
+   procedure Test_Cursor_Lifecycle
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
    procedure Test_Types (T : in out AUnit.Test_Cases.Test_Case'Class) is
       --  This only needs done if the test case is not used
       pragma Unreferenced (T);
@@ -685,6 +688,89 @@ package body Base_Tests is
          raise;
    end Test_X11_Mouse_Motion;
 
+   procedure Test_Cursor_Lifecycle
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+
+      OK : Boolean;
+      W1 : Window_Id;
+      W2 : Window_Id;
+   begin
+      Initialize (OK);
+
+      AUnit.Assertions.Assert
+        (OK, "Initialization failed");
+
+      Create_Window
+        ("Cursor Test A", (320, 240),
+         (Hidden => True, others => <>), W1);
+
+      Create_Window
+        ("Cursor Test B", (320, 240),
+         (Hidden => True, others => <>), W2);
+
+      AUnit.Assertions.Assert
+        (W1 /= No_Window and then W2 /= No_Window,
+         "Window creation failed");
+
+      --  Exercise every supported cursor shape.
+      for Shape in Cursor_Shape loop
+         Set_Cursor (W1, Shape);
+      end loop;
+
+      --  Configure separate windows.
+      Set_Cursor (W1, Crosshair);
+      Set_Cursor (W2, Hand);
+
+      --  Repeated visibility operations.
+      Set_Cursor_Visible (False);
+      Set_Cursor_Visible (False);
+      Set_Cursor_Visible (False);
+
+      --  Change a cursor while hidden.
+      Set_Cursor (W1, I_Beam);
+
+      Set_Cursor_Visible (True);
+      Set_Cursor_Visible (True);
+
+      --  Finalize while the cursor is hidden.
+      Set_Cursor_Visible (False);
+
+      Finalize;
+
+      AUnit.Assertions.Assert
+        (not Is_Initialized, "Finalization failed");
+
+      --  Verify that the backend remains reusable.
+      Initialize (OK);
+
+      AUnit.Assertions.Assert
+        (OK, "Reinitialization failed");
+
+      Create_Window
+        ("Cursor Test C", (320, 240),
+         (Hidden => True, others => <>), W1);
+
+      AUnit.Assertions.Assert
+        (W1 /= No_Window, "Window recreation failed");
+
+      Set_Cursor (W1, Arrow);
+      Set_Cursor_Visible (True);
+
+      Destroy_Window (W1);
+      Finalize;
+
+   exception
+      when others =>
+         if Is_Initialized then
+            Set_Cursor_Visible (True);
+            Finalize;
+         end if;
+
+         raise;
+   end Test_Cursor_Lifecycle;
+
    --  All tests must be registered in this method to run
    overriding procedure Register_Tests (T : in out Base_Test) is
    begin
@@ -704,6 +790,8 @@ package body Base_Tests is
          (T, Test_Queue_Capacity'Access, "Test Queue Capacity");
       AUnit.Test_Cases.Registration.Register_Routine
          (T, Test_Physical_Keymap'Access, "Test Physical Keymap");
+      AUnit.Test_Cases.Registration.Register_Routine
+        (T, Test_Cursor_Lifecycle'Access, "Test Cursor Lifecycle");
       if Ada.Environment_Variables.Value
         ("PORTAL_TEST_X11_INPUT", "") = "1"
       then
