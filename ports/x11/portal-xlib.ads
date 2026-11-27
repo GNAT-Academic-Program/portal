@@ -205,6 +205,10 @@ private package Portal.Xlib is
      (D : Display_Ptr; Detectable : Bool; Supported : access Bool) return Bool
      with Import, Convention => C, External_Name => "XkbSetDetectableAutoRepeat";
 
+   function XGetDefault
+     (D : Display_Ptr; Prog : chars_ptr; Option : chars_ptr) return chars_ptr
+     with Import, Convention => C, External_Name => "XGetDefault";
+
    ---------------------------------------------------------------------
    --  XKB key names: every physical key has a 4 character name that
    --  does not depend on the layout ("AD01" is the first letter of the

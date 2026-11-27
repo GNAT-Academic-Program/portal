@@ -22,6 +22,7 @@ package body Portal.Backend with SPARK_Mode => Off is
    Graphics    : GC;
    WM_Delete   : Atom;
    Start       : Ada.Calendar.Time;
+   Dpi_Scale   : Positive := 100;
 
    type Window_Slot is record
       Open   : Boolean := False;
@@ -52,6 +53,7 @@ package body Portal.Backend with SPARK_Mode => Off is
    function State_To_Mods (State : unsigned) return Modifiers;
    procedure Translate (Raw : aliased XEvent_Raw);
    procedure Pump;
+   function Read_Dpi_Scale return Positive;
 
    function Is_Initialized return Boolean is (Initialized);
    function Is_Open (W : Window_Id) return Boolean is
@@ -296,6 +298,36 @@ package body Portal.Backend with SPARK_Mode => Off is
       end loop;
    end Pump;
 
+   function Read_Dpi_Scale return Positive is
+      Prog     : chars_ptr := New_String ("Xft");
+      Option   : chars_ptr := New_String ("dpi");
+      Resource : constant chars_ptr :=
+        XGetDefault (Display, Prog, Option);
+      Result   : Positive := 100;
+   begin
+      if Resource /= Null_Ptr then
+         begin
+            declare
+               Dpi : constant Long_Float :=
+                 Long_Float'Value (Value (Resource));
+            begin
+               --  Reject invalid or unreasonable DPI values.
+               if Dpi >= 48.0 and then Dpi <= 768.0 then
+                  Result := Positive (Dpi * 100.0 / 96.0);
+               end if;
+            end;
+         exception
+            when Constraint_Error =>
+               null;  --  Invalid DPI; keep the 100% default.
+         end;
+      end if;
+
+      Free (Prog);
+      Free (Option);
+
+      return Result;
+   end Read_Dpi_Scale;
+
    ---------------------------------------------------------------------
    --  Lifetime
    ---------------------------------------------------------------------
@@ -315,6 +347,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       Visual   := XDefaultVisual (Display, Screen);
       Depth    := XDefaultDepth (Display, Screen);
       Graphics := XDefaultGC (Display, Screen);
+      Dpi_Scale := Read_Dpi_Scale;
       WM_Delete := XInternAtom (Display, Name, 0);
       Free (Name);
       if XkbSetDetectableAutoRepeat (Display, 1, Supported'Access) = 0 then
@@ -334,6 +367,7 @@ package body Portal.Backend with SPARK_Mode => Off is
          end if;
       end loop;
       XCloseDisplay (Display);
+      Dpi_Scale := 100;
       Display := Null_Display;
       Initialized := False;
    end Finalize;
@@ -417,8 +451,8 @@ package body Portal.Backend with SPARK_Mode => Off is
       XUnmapWindow (Display, Slots (Window).Handle); XFlush (Display);
    end Hide;
 
-   function Scale (Window : Window_Id) return Positive is (100);
-   --  Milestone: read Xft.dpi from resources, or the monitor's mm size.
+   function Scale (Window : Window_Id) return Positive is
+     (Dpi_Scale);
 
    ---------------------------------------------------------------------
    --  Present: RGBA8888 -> the visual's 32-bit BGRX via a temp buffer.

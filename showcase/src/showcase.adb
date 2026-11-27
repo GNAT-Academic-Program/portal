@@ -53,6 +53,7 @@ begin
       return;
    end if;
    Set_Text_Input (Win, True);
+   
    Log ("display scale:" & Positive'Image (Scale (Win)) & "%");
 
    while Running loop
