@@ -9,9 +9,8 @@ with Parent_Suite;
 --  Since this project builds an executable,
 --  think of this like the main() function in C/C++
 procedure Test_Runner is
-   --  AUnit.Run.Test_Runner is a generic procedure,
-   --  this instantiates it with the Unit_Suite.Suite function,
-   --  which contains all of the tests to run
+   --  Instantiate the AUnit test runner with status reporting
+   --  using the Parent_Suite.Suite function.
    function Runner is new
       AUnit.Run.Test_Runner_With_Status (Parent_Suite.Suite);
 

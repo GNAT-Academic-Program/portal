@@ -42,6 +42,9 @@ package body Base_Tests is
    procedure Test_Timing
      (T : in out AUnit.Test_Cases.Test_Case'Class);
 
+   procedure Test_Unsupported_Format
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
    procedure Test_Types (T : in out AUnit.Test_Cases.Test_Case'Class) is
       --  This only needs done if the test case is not used
       pragma Unreferenced (T);
@@ -1011,50 +1014,138 @@ package body Base_Tests is
          raise;
    end Test_Timing;
 
+   procedure Test_Unsupported_Format
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+
+      OK : Boolean;
+   begin
+      Initialize (OK);
+
+      AUnit.Assertions.Assert
+        (not OK, "Unsupported pixel format was accepted");
+
+      AUnit.Assertions.Assert
+        (not Is_Initialized,
+         "Backend initialized with unsupported pixel format");
+
+   exception
+      when others =>
+         if Is_Initialized then
+            Finalize;
+         end if;
+
+         raise;
+   end Test_Unsupported_Format;
+
    --  All tests must be registered in this method to run
    overriding procedure Register_Tests (T : in out Base_Test) is
+      Selection : constant String :=
+        Ada.Environment_Variables.Value
+          ("PORTAL_TEST_SUITE", "all");
+
+      Native_X11 : constant Boolean :=
+        Ada.Environment_Variables.Value
+          ("PORTAL_TEST_X11_INPUT", "") = "1";
    begin
-      AUnit.Test_Cases.Registration.Register_Routine
-         (T, Test_Types'Access, "Test Types");
-      AUnit.Test_Cases.Registration.Register_Routine
-         (T, Test_Blend'Access, "Test Blend");
-      AUnit.Test_Cases.Registration.Register_Routine
-         (T, Test_Framebuffer'Access, "Test Framebuffer");
-      AUnit.Test_Cases.Registration.Register_Routine
-         (T, Test_Events'Access, "Test Events");
-      AUnit.Test_Cases.Registration.Register_Routine
-         (T, Test_Backend_Queue'Access, "Test Backend Queue");
-      AUnit.Test_Cases.Registration.Register_Routine
-         (T, Test_Backend_Lifecycle'Access, "Test Backend Lifecycle");
-      AUnit.Test_Cases.Registration.Register_Routine
-         (T, Test_Queue_Capacity'Access, "Test Queue Capacity");
-      AUnit.Test_Cases.Registration.Register_Routine
-         (T, Test_Physical_Keymap'Access, "Test Physical Keymap");
-      AUnit.Test_Cases.Registration.Register_Routine
-        (T, Test_Cursor_Lifecycle'Access, "Test Cursor Lifecycle");
-      AUnit.Test_Cases.Registration.Register_Routine
-        (T, Test_Window_Resize'Access, "Test Window Resize");
-      AUnit.Test_Cases.Registration.Register_Routine
-        (T, Test_Presentation'Access, "Test Presentation");
-      AUnit.Test_Cases.Registration.Register_Routine
-        (T, Test_Timing'Access, "Test Timing");
-      if Ada.Environment_Variables.Value
-        ("PORTAL_TEST_X11_INPUT", "") = "1"
+      --  Reject invalid test suite selections.
+      if Selection /= "all"
+        and then Selection /= "unit"
+        and then Selection /= "integration"
+        and then Selection /= "unsupported-format"
       then
+         raise Program_Error with
+           "Unknown test suite: " & Selection;
+      end if;
+
+      --  Negative initialization testing.
+      if Selection = "unsupported-format" then
          AUnit.Test_Cases.Registration.Register_Routine
-           (T, Test_X11_Event_Handling'Access,
-            "Test X11 Native Event Handling");
+           (T, Test_Unsupported_Format'Access,
+            "IT-FB-02: Unsupported Pixel Format");
+
+         return;
+      end if;
+
+      --  Backend-independent unit tests.
+      if Selection = "all" or else Selection = "unit" then
 
          AUnit.Test_Cases.Registration.Register_Routine
-           (T, Test_X11_Mouse_Motion'Access,
-            "Test X11 Mouse Motion");
+           (T, Test_Types'Access,
+            "UT: Types");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Blend'Access,
+            "UT: Blend");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Framebuffer'Access,
+            "UT: Framebuffer");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Events'Access,
+            "UT: Events");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Physical_Keymap'Access,
+            "UT: Physical Keymap");
+
+      end if;
+
+      --  Portable backend integration tests.
+      if Selection = "all"
+        or else Selection = "integration"
+      then
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Backend_Queue'Access,
+            "IT: Backend Queue");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Backend_Lifecycle'Access,
+            "IT: Backend Lifecycle");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Queue_Capacity'Access,
+            "IT: Queue Capacity");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Cursor_Lifecycle'Access,
+            "IT: Cursor Lifecycle");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Window_Resize'Access,
+            "IT: Window Resize");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Presentation'Access,
+            "IT: Presentation");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_Timing'Access,
+            "IT: Timing");
+
+         --  Native X11 integration tests.
+         if Native_X11 then
+
+            AUnit.Test_Cases.Registration.Register_Routine
+              (T, Test_X11_Event_Handling'Access,
+               "IT-X11: Native Event Handling");
+
+            AUnit.Test_Cases.Registration.Register_Routine
+              (T, Test_X11_Mouse_Motion'Access,
+               "IT-X11: Mouse Motion");
+
+         end if;
+
       end if;
    end Register_Tests;
 
    --  Returns the name of the tests
    overriding function Name (T : Base_Test) return AUnit.Message_String is
    begin
-      return AUnit.Format ("Sample_Tests");
+      return AUnit.Format ("Ada PAL");
    end Name;
 
 end Base_Tests;
