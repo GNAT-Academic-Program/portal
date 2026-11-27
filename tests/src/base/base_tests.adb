@@ -8,6 +8,7 @@ with Portal.Framebuffer; use Portal.Framebuffer;
 with Portal.Input;       use Portal.Input;
 with Ada.Environment_Variables;
 with GNAT.OS_Lib;
+with Portal.Keymap;
 
 package body Base_Tests is
 
@@ -20,6 +21,12 @@ package body Base_Tests is
      (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    procedure Test_Queue_Capacity
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
+   procedure Test_Physical_Keymap
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
+   procedure Test_X11_Mouse_Motion
      (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    procedure Test_Types (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -368,6 +375,12 @@ package body Base_Tests is
       Released    : Boolean := False;
       Focus_Lost  : Boolean := False;
       State_Clear : Boolean := False;
+
+      Input_Key : constant String :=
+        (if Ada.Environment_Variables.Value
+           ("PORTAL_TEST_X11_LAYOUT", "us") = "fr"
+         then "z"
+         else "w");
    begin
       Initialize (OK);
       AUnit.Assertions.Assert (OK, "Initialization failed");
@@ -402,8 +415,7 @@ package body Base_Tests is
       end loop;
 
       --  Generate native keyboard events while the queue is full.
-      Run_X11_Command
-        ("xdotool key w getwindowfocus >/dev/null");
+      Run_X11_Command ("xdotool key " & Input_Key);
 
       Sleep (50);
 
@@ -438,8 +450,8 @@ package body Base_Tests is
         (Pressed and Released,
          "Native keyboard events lost during queue saturation");
 
-      --  Hold W and verify the polled keyboard state.
-      Run_X11_Command ("xdotool keydown w");
+      --  Hold the physical W key and verify keyboard state.
+      Run_X11_Command ("xdotool keydown " & Input_Key);
 
       Pressed := False;
 
@@ -473,7 +485,7 @@ package body Base_Tests is
       end loop;
 
       --  Release the native key before evaluating assertions.
-      Run_X11_Command ("xdotool keyup w");
+      Run_X11_Command ("xdotool keyup " & Input_Key);
 
       AUnit.Assertions.Assert
         (Pressed, "Keyboard state was not updated");
@@ -495,6 +507,184 @@ package body Base_Tests is
          raise;
    end Test_X11_Event_Handling;
 
+   procedure Test_Physical_Keymap
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+      use Portal.Keymap;
+   begin
+      --  Physical letter positions.
+      AUnit.Assertions.Assert
+        (Key_From_Name ("AD02") = Key_W, "Physical W");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("AC02") = Key_S, "Physical S");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("AD08") = Key_I, "Physical I");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("AC08") = Key_K, "Physical K");
+
+      --  Left and right modifiers.
+      AUnit.Assertions.Assert
+        (Key_From_Name ("LFSH") = Key_Left_Shift,
+         "Left Shift");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("RTSH") = Key_Right_Shift,
+         "Right Shift");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("LCTL") = Key_Left_Ctrl,
+         "Left Ctrl");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("RCTL") = Key_Right_Ctrl,
+         "Right Ctrl");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("LALT") = Key_Left_Alt,
+         "Left Alt");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("RALT") = Key_Right_Alt,
+         "Right Alt");
+
+      --  Special and function keys.
+      AUnit.Assertions.Assert
+        (Key_From_Name ("ESC ") = Key_Escape,
+         "Escape");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("FK02") = Key_F2,
+         "F2");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("RTRN") = Key_Return,
+         "Return");
+
+      AUnit.Assertions.Assert
+        (Key_From_Name ("KPEN") = Key_KP_Enter,
+         "Keypad Enter");
+
+      --  Native names may contain null padding.
+      AUnit.Assertions.Assert
+        (Key_From_Name ("ESC" & ASCII.NUL) = Key_Escape,
+         "Null-padded key name");
+
+      --  Unsupported key.
+      AUnit.Assertions.Assert
+        (Key_From_Name ("ZZZZ") = Key_Unknown,
+         "Unknown physical key");
+   end Test_Physical_Keymap;
+
+   procedure Test_X11_Mouse_Motion
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+
+      OK : Boolean;
+      W  : Window_Id;
+      E  : Event;
+
+      procedure Expect_Move (X, Y, DX, DY : Pixels);
+
+      procedure Expect_Move (X, Y, DX, DY : Pixels) is
+      begin
+         for I in 1 .. 50 loop
+            Wait (E, 20);
+
+            if E.Kind = Mouse_Move
+              and then E.Window = W
+              and then E.At_Pos = (X, Y)
+            then
+               AUnit.Assertions.Assert
+                 (E.Delta_X = DX, "Incorrect horizontal delta");
+
+               AUnit.Assertions.Assert
+                 (E.Delta_Y = DY, "Incorrect vertical delta");
+
+               return;
+            end if;
+         end loop;
+
+         AUnit.Assertions.Assert
+           (False, "Expected mouse movement was not received");
+      end Expect_Move;
+
+   begin
+      Initialize (OK);
+
+      AUnit.Assertions.Assert
+        (OK, "Initialization failed");
+
+      Create_Window
+        ("PAL Mouse Test", (320, 240),
+         (Hidden => False, others => <>), W);
+
+      AUnit.Assertions.Assert
+        (W /= No_Window, "Window creation failed");
+
+      Run_X11_Command
+        ("xdotool search --sync --onlyvisible " &
+         "--name '^PAL Mouse Test$' windowfocus --sync");
+
+      --  Start with the pointer outside the window.
+      Run_X11_Command ("xdotool mousemove 600 600");
+
+      loop
+         Poll (E);
+         exit when E.Kind = None;
+      end loop;
+
+      --  First movement establishes the baseline.
+      Run_X11_Command
+        ("xdotool mousemove --window " &
+         "$(xdotool search --name '^PAL Mouse Test$') 40 50");
+
+      Expect_Move (40, 50, 0, 0);
+
+      --  Positive movement.
+      Run_X11_Command
+        ("xdotool mousemove --window " &
+         "$(xdotool search --name '^PAL Mouse Test$') 100 80");
+
+      Expect_Move (100, 80, 60, 30);
+
+      --  Negative movement.
+      Run_X11_Command
+        ("xdotool mousemove --window " &
+         "$(xdotool search --name '^PAL Mouse Test$') 70 60");
+
+      Expect_Move (70, 60, -30, -20);
+
+      --  Leave the window and drain pending events.
+      Run_X11_Command ("xdotool mousemove 600 600");
+
+      loop
+         Poll (E);
+         exit when E.Kind = None;
+      end loop;
+
+      --  Reenter the window: the baseline must reset.
+      Run_X11_Command
+        ("xdotool mousemove --window " &
+         "$(xdotool search --name '^PAL Mouse Test$') 150 120");
+
+      Expect_Move (150, 120, 0, 0);
+
+      Finalize;
+
+   exception
+      when others =>
+         if Is_Initialized then
+            Finalize;
+         end if;
+
+         raise;
+   end Test_X11_Mouse_Motion;
+
    --  All tests must be registered in this method to run
    overriding procedure Register_Tests (T : in out Base_Test) is
    begin
@@ -512,12 +702,18 @@ package body Base_Tests is
          (T, Test_Backend_Lifecycle'Access, "Test Backend Lifecycle");
       AUnit.Test_Cases.Registration.Register_Routine
          (T, Test_Queue_Capacity'Access, "Test Queue Capacity");
+      AUnit.Test_Cases.Registration.Register_Routine
+         (T, Test_Physical_Keymap'Access, "Test Physical Keymap");
       if Ada.Environment_Variables.Value
         ("PORTAL_TEST_X11_INPUT", "") = "1"
       then
          AUnit.Test_Cases.Registration.Register_Routine
            (T, Test_X11_Event_Handling'Access,
             "Test X11 Native Event Handling");
+
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_X11_Mouse_Motion'Access,
+            "Test X11 Mouse Motion");
       end if;
    end Register_Tests;
 

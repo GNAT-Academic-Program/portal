@@ -21,9 +21,13 @@ package body Portal.Backend with SPARK_Mode => Off is
    Start       : Unsigned_64 := 0;
 
    type Window_Slot is record
-      Open   : Boolean := False;
-      Handle : HWND := System.Null_Address;
-      Size   : Bedrock.Screen.Size;
+      Open          : Boolean := False;
+      Handle        : HWND := System.Null_Address;
+      Size          : Bedrock.Screen.Size;
+      Have_Mouse    : Boolean := False;
+      Mouse_Tracked : Boolean := False;
+      Last_X        : Pixels := 0;
+      Last_Y        : Pixels := 0;
    end record;
    Slots : array (Valid_Window_Id) of Window_Slot;
 
@@ -39,6 +43,17 @@ package body Portal.Backend with SPARK_Mode => Off is
    Clipboard      : String (1 .. Max_Clipboard);
    Clipboard_Last : Natural := 0;
 
+   WM_MOUSELEAVE : constant UINT := 16#02A3#;
+   TME_LEAVE     : constant DWORD := 16#00000002#;
+
+   type TRACK_MOUSE_EVENT is record
+      Size       : DWORD;
+      Flags      : DWORD;
+      Window     : HWND;
+      Hover_Time : DWORD;
+   end record
+     with Convention => C;
+
    function To_Address (N : Integer) return System.Address is
      (System'To_Address (N));
    --  MAKEINTRESOURCE: a small integer smuggled through a pointer.
@@ -51,11 +66,16 @@ package body Portal.Backend with SPARK_Mode => Off is
    function Dequeue return Event;
    function Id_Of (H : HWND) return Window_Id;
    function To_Key (VK : WPARAM) return Key;
+   function To_Physical_Key (VK : WPARAM; L : LPARAM) return Key;
    function Current_Mods return Modifiers;
    function Wnd_Proc (H : HWND; Msg : UINT; W : WPARAM; L : LPARAM) return LRESULT
      with Convention => Stdcall;
    procedure Pump;
    procedure Reset_State;
+   function TrackMouseEvent (Info : access TRACK_MOUSE_EVENT) return BOOL
+     with Import, Convention => Stdcall, External_Name => "TrackMouseEvent";
+   function Mouse_Delta
+     (Current, Previous : Pixels) return Pixels;
 
    procedure Enqueue (E : Event) is
    begin
@@ -122,6 +142,156 @@ package body Portal.Backend with SPARK_Mode => Off is
       end case;
    end To_Key;
 
+   function To_Physical_Key
+     (VK : WPARAM; L : LPARAM) return Key
+   is
+      Scan : constant Natural :=
+        Natural ((L / 16#10000#) and 16#FF#);
+
+      Extended : constant Boolean :=
+        (L and 16#01000000#) /= 0;
+
+      Code : constant Natural :=
+        (if Extended then Scan + 256 else Scan);
+   begin
+      --  Pause and Print Screen have special scan sequences.
+      if VK = 16#13# then
+         return Key_Pause;
+      elsif VK = 16#2C# then
+         return Key_Print_Screen;
+      end if;
+
+      --  Fall back when no physical scancode is available.
+      if Scan = 0 then
+         return To_Key (VK);
+      end if;
+
+      case Code is
+
+         --  Top letter row.
+         when 16#10# => return Key_Q;
+         when 16#11# => return Key_W;
+         when 16#12# => return Key_E;
+         when 16#13# => return Key_R;
+         when 16#14# => return Key_T;
+         when 16#15# => return Key_Y;
+         when 16#16# => return Key_U;
+         when 16#17# => return Key_I;
+         when 16#18# => return Key_O;
+         when 16#19# => return Key_P;
+
+         --  Home letter row.
+         when 16#1E# => return Key_A;
+         when 16#1F# => return Key_S;
+         when 16#20# => return Key_D;
+         when 16#21# => return Key_F;
+         when 16#22# => return Key_G;
+         when 16#23# => return Key_H;
+         when 16#24# => return Key_J;
+         when 16#25# => return Key_K;
+         when 16#26# => return Key_L;
+
+         --  Bottom letter row.
+         when 16#2C# => return Key_Z;
+         when 16#2D# => return Key_X;
+         when 16#2E# => return Key_C;
+         when 16#2F# => return Key_V;
+         when 16#30# => return Key_B;
+         when 16#31# => return Key_N;
+         when 16#32# => return Key_M;
+
+         --  Number row.
+         when 16#02# => return Key_1;
+         when 16#03# => return Key_2;
+         when 16#04# => return Key_3;
+         when 16#05# => return Key_4;
+         when 16#06# => return Key_5;
+         when 16#07# => return Key_6;
+         when 16#08# => return Key_7;
+         when 16#09# => return Key_8;
+         when 16#0A# => return Key_9;
+         when 16#0B# => return Key_0;
+
+         --  Punctuation.
+         when 16#0C# => return Key_Minus;
+         when 16#0D# => return Key_Equals;
+         when 16#1A# => return Key_Left_Bracket;
+         when 16#1B# => return Key_Right_Bracket;
+         when 16#2B# => return Key_Backslash;
+         when 16#27# => return Key_Semicolon;
+         when 16#28# => return Key_Apostrophe;
+         when 16#29# => return Key_Grave;
+         when 16#33# => return Key_Comma;
+         when 16#34# => return Key_Period;
+         when 16#35# => return Key_Slash;
+
+         --  Common special keys.
+         when 16#01# => return Key_Escape;
+         when 16#0E# => return Key_Backspace;
+         when 16#0F# => return Key_Tab;
+         when 16#1C# => return Key_Return;
+         when 16#39# => return Key_Space;
+         when 16#3A# => return Key_Caps_Lock;
+         when 16#46# => return Key_Scroll_Lock;
+
+         --  Function keys.
+         when 16#3B# .. 16#44# =>
+            return Key'Val
+              (Key'Pos (Key_F1) + Code - 16#3B#);
+
+         when 16#57# => return Key_F11;
+         when 16#58# => return Key_F12;
+
+         --  Modifiers.
+         when 16#2A#  => return Key_Left_Shift;
+         when 16#36#  => return Key_Right_Shift;
+         when 16#1D#  => return Key_Left_Ctrl;
+         when 16#11D# => return Key_Right_Ctrl;
+         when 16#38#  => return Key_Left_Alt;
+         when 16#138# => return Key_Right_Alt;
+         when 16#15B# => return Key_Left_Super;
+         when 16#15C# => return Key_Right_Super;
+         when 16#15D# => return Key_Menu;
+
+         --  Extended navigation keys.
+         when 16#147# => return Key_Home;
+         when 16#148# => return Key_Up;
+         when 16#149# => return Key_Page_Up;
+         when 16#14B# => return Key_Left;
+         when 16#14D# => return Key_Right;
+         when 16#14F# => return Key_End;
+         when 16#150# => return Key_Down;
+         when 16#151# => return Key_Page_Down;
+         when 16#152# => return Key_Insert;
+         when 16#153# => return Key_Delete;
+
+         --  Numeric keypad.
+         when 16#52# => return Key_KP_0;
+         when 16#4F# => return Key_KP_1;
+         when 16#50# => return Key_KP_2;
+         when 16#51# => return Key_KP_3;
+         when 16#4B# => return Key_KP_4;
+         when 16#4C# => return Key_KP_5;
+         when 16#4D# => return Key_KP_6;
+         when 16#47# => return Key_KP_7;
+         when 16#48# => return Key_KP_8;
+         when 16#49# => return Key_KP_9;
+
+         when 16#135# => return Key_KP_Divide;
+         when 16#37#  => return Key_KP_Multiply;
+         when 16#4A#  => return Key_KP_Minus;
+         when 16#4E#  => return Key_KP_Plus;
+         when 16#11C# => return Key_KP_Enter;
+         when 16#53#  => return Key_KP_Period;
+
+         --  Additional special keys.
+         when 16#137# => return Key_Print_Screen;
+
+         when others => return Key_Unknown;
+
+      end case;
+   end To_Physical_Key;
+
    function Current_Mods return Modifiers is
      ((Shift => Keys_Down (Key_Left_Shift) or Keys_Down (Key_Right_Shift),
        Ctrl  => Keys_Down (Key_Left_Ctrl)  or Keys_Down (Key_Right_Ctrl),
@@ -140,6 +310,19 @@ package body Portal.Backend with SPARK_Mode => Off is
    function Hi (L : LPARAM) return Pixels is
      (Pixels (To_I16 (Unsigned_16 ((L / 16#10000#) and 16#FFFF#))));
 
+   function Mouse_Delta
+     (Current, Previous : Pixels) return Pixels
+   is
+      Difference : constant Integer :=
+        Integer (Current) - Integer (Previous);
+   begin
+      return Pixels
+        (Integer'Max
+           (Integer (Pixels'First),
+            Integer'Min
+              (Integer (Pixels'Last), Difference)));
+   end Mouse_Delta;
+
    function Wnd_Proc (H : HWND; Msg : UINT; W : WPARAM; L : LPARAM) return LRESULT is
       Id : constant Window_Id := Id_Of (H);
       T  : constant Ticks := Now;
@@ -152,93 +335,174 @@ package body Portal.Backend with SPARK_Mode => Off is
          when WM_CLOSE =>
             Enqueue ((Kind => Window_Close, Time => T, Window => Id));
             return 0;
+
          when WM_SIZE =>
             declare
-               S : constant Bedrock.Screen.Size := (Extent (Lo (L)), Extent (Hi (L)));
+               S : constant Bedrock.Screen.Size :=
+                 (Extent (Lo (L)), Extent (Hi (L)));
             begin
                if S /= Slots (Id).Size then
                   Slots (Id).Size := S;
-                  Enqueue ((Kind => Window_Resized, Time => T, Window => Id, Size => S));
+                  Enqueue
+                    ((Kind => Window_Resized, Time => T,
+                      Window => Id, Size => S));
                end if;
             end;
             return 0;
+
          when WM_PAINT =>
             Enqueue ((Kind => Window_Expose, Time => T, Window => Id));
             return DefWindowProcA (H, Msg, W, L);
+
          when WM_SETFOCUS =>
-            Enqueue ((Kind => Window_Focus_In, Time => T, Window => Id)); return 0;
-         when WM_KILLFOCUS =>
-            --  Release transient input state when focus is lost.
-            Keys_Down := [others => False];
-            Buttons   := [others => False];
-
-            Enqueue ((Kind => Window_Focus_Out, Time => T, Window => Id));
-
+            Slots (Id).Have_Mouse := False;
+            Enqueue
+              ((Kind => Window_Focus_In, Time => T, Window => Id));
             return 0;
 
-         when WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP =>
+         when WM_KILLFOCUS =>
+            Keys_Down := [others => False];
+            Buttons   := [others => False];
+            Slots (Id).Have_Mouse := False;
+            Enqueue
+              ((Kind => Window_Focus_Out, Time => T, Window => Id));
+            return 0;
+
+         when WM_KEYDOWN | WM_SYSKEYDOWN
+            | WM_KEYUP | WM_SYSKEYUP =>
             declare
-               K    : constant Key := To_Key (W);
-               Down : constant Boolean := Msg in WM_KEYDOWN | WM_SYSKEYDOWN;
-               Repeat : constant Boolean := Down and then Keys_Down (K);
+               K : constant Key := To_Physical_Key (W, L);
+
+               Down : constant Boolean :=
+                 Msg in WM_KEYDOWN | WM_SYSKEYDOWN;
+
+               Repeat : constant Boolean :=
+                 Down and then (L and 16#40000000#) /= 0;
             begin
-               Keys_Down (K) := Down;
+               if K /= Key_Unknown then
+                  Keys_Down (K) := Down;
+               end if;
+
                if Down then
-                  Enqueue ((Kind => Key_Down, Time => T, Window => Id,
-                            Key => K, Mods => Current_Mods, Repeat => Repeat));
+                  Enqueue
+                    ((Kind => Key_Down,
+                      Time => T,
+                      Window => Id,
+                      Key => K,
+                      Mods => Current_Mods,
+                      Repeat => Repeat));
                else
-                  Enqueue ((Kind => Key_Up, Time => T, Window => Id,
-                            Key => K, Mods => Current_Mods, Repeat => False));
+                  Enqueue
+                    ((Kind => Key_Up,
+                      Time => T,
+                      Window => Id,
+                      Key => K,
+                      Mods => Current_Mods,
+                      Repeat => False));
                end if;
             end;
+
             return 0;
 
          when WM_CHAR =>
             if Text_Enabled (Id) and then W in 16#20# .. 16#7E# then
-               Enqueue ((Kind => Text_Input, Time => T, Window => Id,
-                         Text => [Character'Val (W), ' ', ' ', ' '], Length => 1));
+               Enqueue
+                 ((Kind => Text_Input, Time => T, Window => Id,
+                   Text => [Character'Val (W), ' ', ' ', ' '],
+                   Length => 1));
             end if;
             return 0;
 
          when WM_MOUSEMOVE =>
-            Enqueue ((Kind => Mouse_Move, Time => T, Window => Id,
-                      At_Pos => (Lo (L), Hi (L)), Delta_X => 0, Delta_Y => 0,
-                      Held => Buttons));
+            declare
+               X : constant Pixels := Lo (L);
+               Y : constant Pixels := Hi (L);
+
+               DX, DY : Pixels := 0;
+
+               Track : aliased TRACK_MOUSE_EVENT :=
+                 (Size => DWORD (TRACK_MOUSE_EVENT'Object_Size / 8),
+                  Flags => TME_LEAVE,
+                  Window => H,
+                  Hover_Time => 0);
+            begin
+               if not Slots (Id).Mouse_Tracked then
+                  if TrackMouseEvent (Track'Access) /= 0 then
+                     Slots (Id).Mouse_Tracked := True;
+                     Slots (Id).Have_Mouse := False;
+
+                     Enqueue
+                       ((Kind => Mouse_Enter, Time => T, Window => Id));
+                  end if;
+               end if;
+
+               if Slots (Id).Have_Mouse then
+                  DX := Mouse_Delta (X, Slots (Id).Last_X);
+                  DY := Mouse_Delta (Y, Slots (Id).Last_Y);
+               end if;
+
+               Slots (Id).Last_X := X;
+               Slots (Id).Last_Y := Y;
+               Slots (Id).Have_Mouse := True;
+
+               Enqueue
+                 ((Kind => Mouse_Move, Time => T, Window => Id,
+                   At_Pos => (X, Y), Delta_X => DX, Delta_Y => DY,
+                   Held => Buttons));
+            end;
             return 0;
 
-         when WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN
-            | WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP | WM_XBUTTONUP =>
+         when WM_MOUSELEAVE =>
+            Slots (Id).Have_Mouse := False;
+            Slots (Id).Mouse_Tracked := False;
+
+            Enqueue
+              ((Kind => Mouse_Leave, Time => T, Window => Id));
+            return 0;
+
+         when WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN
+            | WM_XBUTTONDOWN | WM_LBUTTONUP | WM_RBUTTONUP
+            | WM_MBUTTONUP | WM_XBUTTONUP =>
             declare
                Down : constant Boolean :=
-                 Msg in WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN;
+                 Msg in WM_LBUTTONDOWN | WM_RBUTTONDOWN
+                   | WM_MBUTTONDOWN | WM_XBUTTONDOWN;
+
                B : constant Mouse_Button :=
                  (case Msg is
                     when WM_LBUTTONDOWN | WM_LBUTTONUP => Left,
                     when WM_RBUTTONDOWN | WM_RBUTTONUP => Right,
                     when WM_MBUTTONDOWN | WM_MBUTTONUP => Middle,
-                    when others => (if (W / 16#10000#) = 1 then Back else Forward));
+                    when others =>
+                       (if (W / 16#10000#) = 1 then Back else Forward));
+
                P : constant Point := (Lo (L), Hi (L));
             begin
                Buttons (B) := Down;
+
                if Down then
-                  Enqueue ((Kind => Mouse_Down, Time => T, Window => Id,
-                            Button => B, Where => P, Clicks => 1));
+                  Enqueue
+                    ((Kind => Mouse_Down, Time => T, Window => Id,
+                      Button => B, Where => P, Clicks => 1));
                else
-                  Enqueue ((Kind => Mouse_Up, Time => T, Window => Id,
-                            Button => B, Where => P, Clicks => 1));
+                  Enqueue
+                    ((Kind => Mouse_Up, Time => T, Window => Id,
+                      Button => B, Where => P, Clicks => 1));
                end if;
             end;
             return 0;
 
          when WM_MOUSEWHEEL =>
             declare
-               Delta_Raw : constant Integer_16 := To_I16 (
-                  Unsigned_16 ((W / 16#10000#) and 16#FFFF#)
-               );
+               Delta_Raw : constant Integer_16 :=
+                 To_I16
+                   (Unsigned_16 ((W / 16#10000#) and 16#FFFF#));
             begin
-               Enqueue ((Kind => Mouse_Wheel, Time => T, Window => Id,
-                         Wheel_X => 0, Wheel_Y => Pixels (Integer (Delta_Raw) / 120),
-                         Wheel_At => (Lo (L), Hi (L))));
+               Enqueue
+                 ((Kind => Mouse_Wheel, Time => T, Window => Id,
+                   Wheel_X => 0,
+                   Wheel_Y => Pixels (Integer (Delta_Raw) / 120),
+                   Wheel_At => (Lo (L), Hi (L))));
             end;
             return 0;
 
@@ -354,7 +618,11 @@ package body Portal.Backend with SPARK_Mode => Off is
             if H = System.Null_Address then
                return;
             end if;
-            Slots (W) := (Open => True, Handle => H, Size => Size);
+            Slots (W) :=
+              (Open   => True,
+               Handle => H,
+               Size   => Size,
+               others => <>);
             Window := W;
             return;
          end if;
@@ -371,6 +639,11 @@ package body Portal.Backend with SPARK_Mode => Off is
       Slots (Window).Handle := System.Null_Address;
 
       Text_Enabled (Window) := False;
+
+      Slots (Window).Have_Mouse    := False;
+      Slots (Window).Mouse_Tracked := False;
+      Slots (Window).Last_X        := 0;
+      Slots (Window).Last_Y        := 0;
    end Destroy_Window;
 
    procedure Set_Title (Window : Window_Id; Title : String) is
@@ -406,6 +679,8 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Hide (Window : Window_Id) is
    begin
+      Slots (Window).Have_Mouse := False;
+
       if ShowWindow (Slots (Window).Handle, SW_HIDE) = 0 then
          null;
       end if;

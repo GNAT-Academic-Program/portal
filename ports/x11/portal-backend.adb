@@ -25,10 +25,13 @@ package body Portal.Backend with SPARK_Mode => Off is
    Dpi_Scale   : Positive := 100;
 
    type Window_Slot is record
-      Open   : Boolean := False;
-      Handle : Xlib.Window := 0;
-      Size   : Bedrock.Screen.Size;
-      Shape  : Cursor_Shape := Arrow;
+      Open       : Boolean := False;
+      Handle     : Xlib.Window := 0;
+      Size       : Bedrock.Screen.Size;
+      Shape      : Cursor_Shape := Arrow;
+      Have_Mouse : Boolean := False;
+      Last_X     : Pixels := 0;
+      Last_Y     : Pixels := 0;
    end record;
 
    Slots : array (Valid_Window_Id) of Window_Slot;
@@ -70,6 +73,8 @@ package body Portal.Backend with SPARK_Mode => Off is
      (W /= No_Window and then Slots (W).Open);
 
    procedure Reset_State;
+
+   function Mouse_Delta (Current, Previous : Pixels) return Pixels;
 
    function Id_Of (H : Xlib.Window) return Window_Id is
    begin
@@ -155,6 +160,7 @@ package body Portal.Backend with SPARK_Mode => Off is
       end if;
       if XkbGetNames (Display, Xkb_Key_Names_Mask, Desc) = 0
         and then Desc.Names /= null
+        and then Desc.Names.Keys /= System.Null_Address
       then
          declare
             Names : Xkb_Key_Names with Import, Address => Desc.Names.Keys;
@@ -173,6 +179,19 @@ package body Portal.Backend with SPARK_Mode => Off is
        Ctrl      => (State and 4) /= 0,
        Alt       => (State and 8) /= 0,
        Super     => (State and 64) /= 0));
+
+   function Mouse_Delta
+     (Current, Previous : Pixels) return Pixels
+   is
+      Difference : constant Integer :=
+        Integer (Current) - Integer (Previous);
+   begin
+      return Pixels
+        (Integer'Max
+           (Integer (Pixels'First),
+            Integer'Min
+              (Integer (Pixels'Last), Difference)));
+   end Mouse_Delta;
 
    ---------------------------------------------------------------------
    --  Translate one XEvent into zero or more Portal events
@@ -206,9 +225,38 @@ package body Portal.Backend with SPARK_Mode => Off is
             begin
                Mods := State_To_Mods (KE.State);
                declare
-                  Repeat : constant Boolean := Down and then Keys_Down (K);
+                  Repeat : constant Boolean :=
+                    Down
+                    and then K /= Key_Unknown
+                    and then Keys_Down (K);
                begin
-                  Keys_Down (K) := Down;
+                  if K /= Key_Unknown then
+                     Keys_Down (K) := Down;
+                  end if;
+                  case K is
+                     when Key_Left_Shift | Key_Right_Shift =>
+                        Mods.Shift :=
+                          Keys_Down (Key_Left_Shift)
+                          or Keys_Down (Key_Right_Shift);
+
+                     when Key_Left_Ctrl | Key_Right_Ctrl =>
+                        Mods.Ctrl :=
+                          Keys_Down (Key_Left_Ctrl)
+                          or Keys_Down (Key_Right_Ctrl);
+
+                     when Key_Left_Alt | Key_Right_Alt =>
+                        Mods.Alt :=
+                          Keys_Down (Key_Left_Alt)
+                          or Keys_Down (Key_Right_Alt);
+
+                     when Key_Left_Super | Key_Right_Super =>
+                        Mods.Super :=
+                          Keys_Down (Key_Left_Super)
+                          or Keys_Down (Key_Right_Super);
+
+                     when others =>
+                        null;
+                  end case;
                   if Down then
                      Enqueue ((Kind => Key_Down, Time => T, Window => W,
                                Key => K, Mods => Mods, Repeat => Repeat));
@@ -266,20 +314,44 @@ package body Portal.Backend with SPARK_Mode => Off is
             end;
 
          when Motion_Notify =>
-            begin
-               Enqueue ((Kind => Mouse_Move, Time => T, Window => W,
-                         At_Pos => (Pixels (BE.X), Pixels (BE.Y)),
-                         Delta_X => 0, Delta_Y => 0, Held => Buttons));
-            end;
+            declare
+               X : constant Pixels := Pixels (BE.X);
+               Y : constant Pixels := Pixels (BE.Y);
 
-         when Enter_Notify => Enqueue ((Kind => Mouse_Enter, Time => T, Window => W));
-         when Leave_Notify => Enqueue ((Kind => Mouse_Leave, Time => T, Window => W));
-         when Focus_In => Enqueue ((Kind => Window_Focus_In, Time => T, Window => W));
+               DX, DY : Pixels := 0;
+            begin
+               if Slots (W).Have_Mouse then
+                  DX := Mouse_Delta (X, Slots (W).Last_X);
+                  DY := Mouse_Delta (Y, Slots (W).Last_Y);
+               end if;
+
+               Slots (W).Last_X := X;
+               Slots (W).Last_Y := Y;
+               Slots (W).Have_Mouse := True;
+
+               Enqueue
+                 ((Kind => Mouse_Move,
+                   Time => T,
+                   Window => W,
+                   At_Pos => (X, Y),
+                   Delta_X => DX,
+                   Delta_Y => DY,
+                   Held => Buttons));
+            end;
+         when Enter_Notify =>
+            Slots (W).Have_Mouse := False;
+            Enqueue ((Kind => Mouse_Enter, Time => T, Window => W));
+         when Leave_Notify =>
+            Slots (W).Have_Mouse := False;
+            Enqueue ((Kind => Mouse_Leave, Time => T, Window => W));
+         when Focus_In =>
+            Slots (W).Have_Mouse := False;
+            Enqueue ((Kind => Window_Focus_In, Time => T, Window => W));
          when Focus_Out =>
-            --  Release transient input state when focus is lost.
             Keys_Down := [others => False];
             Buttons   := [others => False];
             Mods      := No_Modifiers;
+            Slots (W).Have_Mouse := False;
             Enqueue ((Kind => Window_Focus_Out, Time => T, Window => W));
          when Expose       => Enqueue ((Kind => Window_Expose, Time => T, Window => W));
          when Map_Notify   => Enqueue ((Kind => Window_Shown, Time => T, Window => W));
@@ -465,10 +537,11 @@ package body Portal.Backend with SPARK_Mode => Off is
             XStoreName (Display, H, Name);
             Free (Name);
             Slots (W) :=
-            (Open   => True,
-               Handle => H,
-               Size   => Size,
-               Shape  => Arrow);
+              (Open       => True,
+               Handle     => H,
+               Size       => Size,
+               Shape      => Arrow,
+               others     => <>);
 
             Apply_Cursor (W);
 
@@ -493,6 +566,10 @@ package body Portal.Backend with SPARK_Mode => Off is
       Slots (Window).Shape  := Arrow;
 
       Text_Enabled (Window) := False;
+
+      Slots (Window).Have_Mouse := False;
+      Slots (Window).Last_X := 0;
+      Slots (Window).Last_Y := 0;
    end Destroy_Window;
 
    procedure Set_Title (Window : Window_Id; Title : String) is
@@ -520,6 +597,7 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Hide (Window : Window_Id) is
    begin
+      Slots (Window).Have_Mouse := False;
       XUnmapWindow (Display, Slots (Window).Handle); XFlush (Display);
    end Hide;
 
