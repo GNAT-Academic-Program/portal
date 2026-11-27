@@ -5,12 +5,13 @@
 --  clipboard through selections, DPI from Xft.dpi, gamepads via
 --  evdev (X11 has none).
 
-with Ada.Calendar;
+with Ada.Real_Time;
 with Interfaces.C;         use Interfaces.C;
 with Interfaces.C.Strings; use Interfaces.C.Strings;
 with System;               use type System.Address;
 with Portal.Keymap;
 with Portal.Xlib;          use Portal.Xlib;
+with Ada.Unchecked_Deallocation;
 
 package body Portal.Backend with SPARK_Mode => Off is
 
@@ -21,7 +22,7 @@ package body Portal.Backend with SPARK_Mode => Off is
    Depth       : int;
    Graphics    : GC;
    WM_Delete   : Atom;
-   Start       : Ada.Calendar.Time;
+   Start       : Ada.Real_Time.Time;
    Dpi_Scale   : Positive := 100;
 
    type Window_Slot is record
@@ -33,6 +34,19 @@ package body Portal.Backend with SPARK_Mode => Off is
       Last_X     : Pixels := 0;
       Last_Y     : Pixels := 0;
    end record;
+
+   --  Prefix of the native XImage structure.
+   type XImage_Layout is record
+      Width, Height, Xoffset, Format : int;
+      Data : System.Address;
+
+      Byte_Order, Bitmap_Unit,
+        Bitmap_Bit_Order, Bitmap_Pad : int;
+
+      Depth, Bytes_Per_Line, Bits_Per_Pixel : int;
+
+      Red_Mask, Green_Mask, Blue_Mask : unsigned_long;
+   end record with Convention => C;
 
    Slots : array (Valid_Window_Id) of Window_Slot;
 
@@ -56,6 +70,16 @@ package body Portal.Backend with SPARK_Mode => Off is
    Clipboard      : String (1 .. Max_Clipboard);
    Clipboard_Last : Natural := 0;
 
+   type Byte is mod 2 ** 8;
+   type Byte_Array is array (Natural range <>) of Byte with Pack;
+   type Byte_Array_Access is access Byte_Array;
+
+   procedure Free_Presentation_Data is
+     new Ada.Unchecked_Deallocation
+       (Byte_Array, Byte_Array_Access);
+
+   Presentation_Data : Byte_Array_Access := null;
+
    function Id_Of (H : Xlib.Window) return Window_Id;
    procedure Enqueue (E : Event);
    function Dequeue return Event;
@@ -75,6 +99,10 @@ package body Portal.Backend with SPARK_Mode => Off is
    procedure Reset_State;
 
    function Mouse_Delta (Current, Previous : Pixels) return Pixels;
+
+   procedure Ensure_Presentation_Data (Required : Positive);
+
+   function Supported_Image_Format return Boolean;
 
    function Id_Of (H : Xlib.Window) return Window_Id is
    begin
@@ -450,11 +478,55 @@ package body Portal.Backend with SPARK_Mode => Off is
       Clipboard_Last := 0;
    end Reset_State;
 
+   procedure Ensure_Presentation_Data (Required : Positive) is
+   begin
+      if Presentation_Data = null
+        or else Presentation_Data'Length < Required
+      then
+         Free_Presentation_Data (Presentation_Data);
+
+         Presentation_Data :=
+           new Byte_Array (0 .. Required - 1);
+      end if;
+   end Ensure_Presentation_Data;
+
+   function Supported_Image_Format return Boolean is
+      Scratch : aliased unsigned := 0;
+
+      Img : constant XImage_Ptr := XCreateImage
+        (Display, Visual, unsigned (Depth), ZPixmap, 0,
+         Scratch'Address, 1, 1, 32, 4);
+
+      Result : Boolean;
+   begin
+      if Img = System.Null_Address then
+         return False;
+      end if;
+
+      declare
+         Layout : XImage_Layout
+           with Import, Address => Img;
+      begin
+         Result :=
+           Layout.Depth = 24
+           and then Layout.Bits_Per_Pixel = 32
+           and then Layout.Byte_Order = 0
+           and then Layout.Bytes_Per_Line = 4
+           and then Layout.Red_Mask = 16#FF0000#
+           and then Layout.Green_Mask = 16#00FF00#
+           and then Layout.Blue_Mask = 16#0000FF#;
+      end;
+
+      XFree (Img);
+
+      return Result;
+   end Supported_Image_Format;
+
    procedure Initialize (Success : out Boolean) is
       Supported : aliased Bool;
       Name : chars_ptr := New_String ("WM_DELETE_WINDOW");
    begin
-      Start := Ada.Calendar.Clock;
+      Start := Ada.Real_Time.Clock;
       Display := XOpenDisplay (Null_Ptr);
       if Display = Null_Display then
          Success := False;
@@ -464,6 +536,13 @@ package body Portal.Backend with SPARK_Mode => Off is
       Screen   := XDefaultScreen (Display);
       Visual   := XDefaultVisual (Display, Screen);
       Depth    := XDefaultDepth (Display, Screen);
+      if not Supported_Image_Format then
+         XCloseDisplay (Display);
+         Display := Null_Display;
+         Free (Name);
+         Success := False;
+         return;
+      end if;
       Graphics := XDefaultGC (Display, Screen);
       Dpi_Scale := Read_Dpi_Scale;
       WM_Delete := XInternAtom (Display, Name, 0);
@@ -478,6 +557,7 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Finalize is
    begin
+      Free_Presentation_Data (Presentation_Data);
       --  Destroy all remaining windows.
       for W in Valid_Window_Id loop
          if Slots (W).Open then
@@ -633,39 +713,58 @@ package body Portal.Backend with SPARK_Mode => Off is
    --  Milestone: XShm, and a visual check instead of assuming 24/32.
    ---------------------------------------------------------------------
 
-   type Byte is mod 2 ** 8;
-   type Byte_Array is array (Natural range <>) of Byte with Pack;
-
    procedure Present (Window : Window_Id; Frame : Buffer) is
       W : constant Natural := Natural (Width (Frame));
       H : constant Natural := Natural (Height (Frame));
-      Data : Byte_Array (0 .. W * H * 4 - 1);
-      Img  : XImage_Ptr;
-      I    : Natural := 0;
+
+      Required : constant Long_Long_Integer :=
+        Long_Long_Integer (W) * Long_Long_Integer (H) * 4;
+
+      Img : XImage_Ptr;
+      I   : Natural := 0;
    begin
+      if Required not in 1 .. Long_Long_Integer (Natural'Last) then
+         return;
+      end if;
+
+      Ensure_Presentation_Data (Positive (Required));
+
+      --  Convert RGBA to native BGRX.
       for Y in 0 .. Frame.Height loop
          for X in 0 .. Frame.Width loop
             declare
                C : constant Color := Frame.Data (Y, X);
             begin
-               Data (I)     := Byte (C.B);
-               Data (I + 1) := Byte (C.G);
-               Data (I + 2) := Byte (C.R);
-               Data (I + 3) := 0;
+               Presentation_Data (I)     := Byte (C.B);
+               Presentation_Data (I + 1) := Byte (C.G);
+               Presentation_Data (I + 2) := Byte (C.R);
+               Presentation_Data (I + 3) := 0;
+
                I := I + 4;
             end;
          end loop;
       end loop;
+
       Img := XCreateImage
-        (Display, Visual, unsigned (Depth), ZPixmap, 0, Data'Address,
+        (Display, Visual, unsigned (Depth), ZPixmap, 0,
+         Presentation_Data.all'Address,
          unsigned (W), unsigned (H), 32, int (W * 4));
-      if XPutImage (Display, Slots (Window).Handle, Graphics, Img,
-                    0, 0, 0, 0, unsigned (W), unsigned (H)) /= 0
+
+      if Img = System.Null_Address then
+         return;
+      end if;
+
+      if XPutImage
+        (Display, Slots (Window).Handle, Graphics, Img,
+         0, 0, 0, 0, unsigned (W), unsigned (H)) /= 0
       then
          null;
       end if;
-      --  XDestroyImage would free Data; we own it, so free only the struct.
+
+      --  Release only the image structure.
+      --  Presentation_Data is owned by Ada PAL.
       XFree (Img);
+
       XFlush (Display);
    end Present;
 
@@ -873,12 +972,14 @@ package body Portal.Backend with SPARK_Mode => Off is
    ---------------------------------------------------------------------
 
    function Now return Ticks is
-      use Ada.Calendar;
+      use Ada.Real_Time;
    begin
       if not Initialized then
          return 0;
       end if;
-      return Ticks (Duration'(Clock - Start) * 1000.0);
+
+      return Ticks
+        (To_Duration (Clock - Start) * 1000.0);
    end Now;
 
    procedure Sleep (Ms : Natural) is

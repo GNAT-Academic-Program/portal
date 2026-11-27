@@ -9,6 +9,7 @@ with Portal.Input;       use Portal.Input;
 with Ada.Environment_Variables;
 with GNAT.OS_Lib;
 with Portal.Keymap;
+with Ada.Unchecked_Deallocation;
 
 package body Base_Tests is
 
@@ -33,6 +34,12 @@ package body Base_Tests is
      (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    procedure Test_Window_Resize
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
+   procedure Test_Presentation
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
+   procedure Test_Timing
      (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    procedure Test_Types (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -860,6 +867,150 @@ package body Base_Tests is
          raise;
    end Test_Window_Resize;
 
+   procedure Test_Presentation
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+
+      type Buffer_Access is access Buffer;
+
+      procedure Free_Buffer is
+        new Ada.Unchecked_Deallocation
+          (Buffer, Buffer_Access);
+
+      Frame : Buffer_Access := null;
+
+      OK : Boolean;
+      W  : Window_Id;
+
+      procedure Present_Frames (W_Pixels, H_Pixels : Extent);
+
+      procedure Present_Frames (W_Pixels, H_Pixels : Extent) is
+      begin
+         Free_Buffer (Frame);
+
+         Frame := new Buffer
+           (H_Pixels - 1, W_Pixels - 1);
+
+         Clear (Frame.all, (255, 0, 0, 255));
+         Present (W, Frame.all);
+
+         Clear (Frame.all, (0, 255, 0, 255));
+         Present (W, Frame.all);
+
+         Clear (Frame.all, (0, 0, 255, 255));
+         Present (W, Frame.all);
+      end Present_Frames;
+
+   begin
+      Initialize (OK);
+
+      AUnit.Assertions.Assert
+        (OK, "Initialization failed");
+
+      Create_Window
+        ("PAL Presentation Test", (1280, 720),
+         (Hidden => True, others => <>), W);
+
+      AUnit.Assertions.Assert
+        (W /= No_Window, "Window creation failed");
+
+      --  Initial allocation.
+      Present_Frames (320, 240);
+
+      --  Grow the conversion buffer.
+      Present_Frames (640, 480);
+
+      --  Exercise a larger framebuffer.
+      Present_Frames (1280, 720);
+
+      --  Present smaller frames after growing the buffer.
+      Present_Frames (320, 240);
+
+      Free_Buffer (Frame);
+
+      Destroy_Window (W);
+      Finalize;
+
+      --  Verify presentation after backend reinitialization.
+      Initialize (OK);
+
+      AUnit.Assertions.Assert
+        (OK, "Reinitialization failed");
+
+      Create_Window
+        ("PAL Presentation Restart", (320, 240),
+         (Hidden => True, others => <>), W);
+
+      AUnit.Assertions.Assert
+        (W /= No_Window, "Window recreation failed");
+
+      Present_Frames (320, 240);
+
+      Free_Buffer (Frame);
+
+      Finalize;
+
+   exception
+      when others =>
+         Free_Buffer (Frame);
+
+         if Is_Initialized then
+            Finalize;
+         end if;
+
+         raise;
+   end Test_Presentation;
+
+   procedure Test_Timing
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+
+      OK : Boolean;
+      T1, T2, T3 : Ticks;
+   begin
+      Initialize (OK);
+
+      AUnit.Assertions.Assert
+        (OK, "Initialization failed");
+
+      T1 := Now;
+
+      Sleep (50);
+
+      T2 := Now;
+
+      AUnit.Assertions.Assert
+        (T2 >= T1, "Clock moved backwards");
+
+      AUnit.Assertions.Assert
+        (T2 - T1 >= 30, "Insufficient elapsed time");
+
+      Sleep (50);
+
+      T3 := Now;
+
+      AUnit.Assertions.Assert
+        (T3 >= T2, "Clock moved backwards");
+
+      AUnit.Assertions.Assert
+        (T3 - T2 >= 30, "Insufficient elapsed time");
+
+      Finalize;
+
+      AUnit.Assertions.Assert
+        (Now = 0, "Clock not reset after finalization");
+
+   exception
+      when others =>
+         if Is_Initialized then
+            Finalize;
+         end if;
+
+         raise;
+   end Test_Timing;
+
    --  All tests must be registered in this method to run
    overriding procedure Register_Tests (T : in out Base_Test) is
    begin
@@ -883,6 +1034,10 @@ package body Base_Tests is
         (T, Test_Cursor_Lifecycle'Access, "Test Cursor Lifecycle");
       AUnit.Test_Cases.Registration.Register_Routine
         (T, Test_Window_Resize'Access, "Test Window Resize");
+      AUnit.Test_Cases.Registration.Register_Routine
+        (T, Test_Presentation'Access, "Test Presentation");
+      AUnit.Test_Cases.Registration.Register_Routine
+        (T, Test_Timing'Access, "Test Timing");
       if Ada.Environment_Variables.Value
         ("PORTAL_TEST_X11_INPUT", "") = "1"
       then

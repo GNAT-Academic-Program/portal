@@ -12,6 +12,7 @@ with Interfaces;          use Interfaces;
 with Interfaces.C;        use Interfaces.C;
 with System;              use type System.Address;
 with Portal.Win32;        use Portal.Win32;
+with Ada.Unchecked_Deallocation;
 
 package body Portal.Backend with SPARK_Mode => Off is
 
@@ -44,6 +45,16 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    Clipboard      : String (1 .. Max_Clipboard);
    Clipboard_Last : Natural := 0;
+
+   type Byte is mod 2 ** 8;
+   type Byte_Array is array (Natural range <>) of Byte with Pack;
+   type Byte_Array_Access is access Byte_Array;
+
+   procedure Free_Presentation_Data is
+     new Ada.Unchecked_Deallocation
+       (Byte_Array, Byte_Array_Access);
+
+   Presentation_Data : Byte_Array_Access := null;
 
    WM_MOUSELEAVE : constant UINT := 16#02A3#;
    TME_LEAVE     : constant DWORD := 16#00000002#;
@@ -100,6 +111,8 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Apply_Cursor (Window : Window_Id);
    procedure Refresh_Cursor;
+
+   procedure Ensure_Presentation_Data (Required : Positive);
 
    procedure Enqueue (E : Event) is
    begin
@@ -665,6 +678,18 @@ package body Portal.Backend with SPARK_Mode => Off is
       Cursor_Visible := True;
    end Reset_State;
 
+   procedure Ensure_Presentation_Data (Required : Positive) is
+   begin
+      if Presentation_Data = null
+        or else Presentation_Data'Length < Required
+      then
+         Free_Presentation_Data (Presentation_Data);
+
+         Presentation_Data :=
+           new Byte_Array (0 .. Required - 1);
+      end if;
+   end Ensure_Presentation_Data;
+
    procedure Initialize (Success : out Boolean) is
       WC : aliased WNDCLASSEXA;
    begin
@@ -683,6 +708,7 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Finalize is
    begin
+      Free_Presentation_Data (Presentation_Data);
       Set_Cursor_Visible (True);
       --  Destroy all remaining windows.
       for W in Valid_Window_Id loop
@@ -837,38 +863,62 @@ package body Portal.Backend with SPARK_Mode => Off is
    --  Present: RGBA -> BGRX top-down DIB, StretchDIBits 1:1
    ---------------------------------------------------------------------
 
-   type Byte is mod 2 ** 8;
-   type Byte_Array is array (Natural range <>) of Byte with Pack;
-
    procedure Present (Window : Window_Id; Frame : Buffer) is
-      W    : constant Natural := Natural (Width (Frame));
-      H    : constant Natural := Natural (Height (Frame));
-      Data : Byte_Array (0 .. W * H * 4 - 1);
-      I    : Natural := 0;
+      W : constant Natural := Natural (Width (Frame));
+      H : constant Natural := Natural (Height (Frame));
+
+      Required : constant Long_Long_Integer :=
+        Long_Long_Integer (W) * Long_Long_Integer (H) * 4;
+
+      I : Natural := 0;
+
       Info : aliased constant BITMAPINFO :=
-      (Header => (Size   => DWORD (BITMAPINFOHEADER'Size / 8),
-                  Width  => long (W),
-                  Height => -long (H),
-                  others => <>),
+        (Header =>
+           (Size   => DWORD (BITMAPINFOHEADER'Size / 8),
+            Width  => long (W),
+            Height => -long (H),
+            others => <>),
          Colors => 0);
-      DC : constant HDC := GetDC (Slots (Window).Handle);
+
+      DC : HDC;
    begin
+      if Required not in 1 .. Long_Long_Integer (Natural'Last) then
+         return;
+      end if;
+
+      Ensure_Presentation_Data (Positive (Required));
+
+      --  Convert RGBA to native BGRX.
       for Y in 0 .. Frame.Height loop
          for X in 0 .. Frame.Width loop
             declare
                C : constant Color := Frame.Data (Y, X);
             begin
-               Data (I) := Byte (C.B); Data (I + 1) := Byte (C.G);
-               Data (I + 2) := Byte (C.R); Data (I + 3) := 0;
+               Presentation_Data (I)     := Byte (C.B);
+               Presentation_Data (I + 1) := Byte (C.G);
+               Presentation_Data (I + 2) := Byte (C.R);
+               Presentation_Data (I + 3) := 0;
+
                I := I + 4;
             end;
          end loop;
       end loop;
-      if StretchDIBits (DC, 0, 0, int (W), int (H), 0, 0, int (W), int (H),
-                        Data'Address, Info'Access, DIB_RGB_COLORS, SRCCOPY) = 0
+
+      DC := GetDC (Slots (Window).Handle);
+
+      if DC = System.Null_Address then
+         return;
+      end if;
+
+      if StretchDIBits
+        (DC, 0, 0, int (W), int (H),
+         0, 0, int (W), int (H),
+         Presentation_Data.all'Address,
+         Info'Access, DIB_RGB_COLORS, SRCCOPY) = 0
       then
          null;
       end if;
+
       if ReleaseDC (Slots (Window).Handle, DC) = 0 then
          null;
       end if;
