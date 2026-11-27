@@ -55,6 +55,8 @@ begin
       return;
    end if;
    Set_Text_Input (Win, True);
+   
+   Log ("display scale:" & Positive'Image (Scale (Win)) & "%");
    --  Cursor visibility acceptance test
    Set_Cursor (Win, Hand);
 

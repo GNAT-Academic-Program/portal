@@ -215,6 +215,10 @@ private package Portal.Xlib is
      (D : Display_Ptr; Detectable : Bool; Supported : access Bool) return Bool
      with Import, Convention => C, External_Name => "XkbSetDetectableAutoRepeat";
 
+   function XGetDefault
+     (D : Display_Ptr; Prog : chars_ptr; Option : chars_ptr) return chars_ptr
+     with Import, Convention => C, External_Name => "XGetDefault";
+
    function XCreateBitmapFromData
      (D        : Display_Ptr;
       Drawable : XID;
