@@ -55,6 +55,7 @@ package body Portal.Backend with SPARK_Mode => Off is
    function Wnd_Proc (H : HWND; Msg : UINT; W : WPARAM; L : LPARAM) return LRESULT
      with Convention => Stdcall;
    procedure Pump;
+   procedure Reset_State;
 
    procedure Enqueue (E : Event) is
    begin
@@ -260,6 +261,17 @@ package body Portal.Backend with SPARK_Mode => Off is
    --  Lifetime
    ---------------------------------------------------------------------
 
+   procedure Reset_State is
+   begin
+      Q_Head         := 0;
+      Q_Count        := 0;
+      Keys_Down      := [others => False];
+      Buttons        := [others => False];
+      Text_Enabled   := [others => False];
+      Clipboard_Last := 0;
+      Cursor_Cur     := System.Null_Address;
+   end Reset_State;
+
    procedure Initialize (Success : out Boolean) is
       WC : aliased WNDCLASSEXA;
    begin
@@ -278,14 +290,21 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Finalize is
    begin
+      --  Destroy all remaining windows.
       for W in Valid_Window_Id loop
          if Slots (W).Open then
-            if DestroyWindow (Slots (W).Handle) = 0 then
-               null;
-            end if;
-            Slots (W).Open := False;
+            Destroy_Window (W);
          end if;
       end loop;
+
+      --  Release the registered window class.
+      if UnregisterClassA (Class_Name'Address, Instance) = 0 then
+         null;
+      end if;
+
+      Reset_State;
+
+      Instance    := System.Null_Address;
       Initialized := False;
    end Finalize;
 
@@ -336,7 +355,11 @@ package body Portal.Backend with SPARK_Mode => Off is
       if DestroyWindow (Slots (Window).Handle) = 0 then
          null;
       end if;
-      Slots (Window).Open := False;
+
+      Slots (Window).Open   := False;
+      Slots (Window).Handle := System.Null_Address;
+
+      Text_Enabled (Window) := False;
    end Destroy_Window;
 
    procedure Set_Title (Window : Window_Id; Title : String) is

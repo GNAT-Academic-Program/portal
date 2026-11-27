@@ -146,6 +146,8 @@ private package Portal.Win32 is
      with Import, Convention => Stdcall, External_Name => "GetModuleHandleA";
    function RegisterClassExA (Class : access constant WNDCLASSEXA) return ATOM
      with Import, Convention => Stdcall, External_Name => "RegisterClassExA";
+   function UnregisterClassA (Class_Name : LPCSTR; Instance : HINSTANCE) return BOOL
+     with Import, Convention => Stdcall, External_Name => "UnregisterClassA";
    function CreateWindowExA
      (Ex_Style : DWORD; Class_Name, Window_Name : LPCSTR; Style : DWORD;
       X, Y, W, H : int; Parent : HWND; Menu : HANDLE; Instance : HINSTANCE;

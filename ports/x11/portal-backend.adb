@@ -69,6 +69,8 @@ package body Portal.Backend with SPARK_Mode => Off is
    function Is_Open (W : Window_Id) return Boolean is
      (W /= No_Window and then Slots (W).Open);
 
+   procedure Reset_State;
+
    function Id_Of (H : Xlib.Window) return Window_Id is
    begin
       for W in Valid_Window_Id loop
@@ -342,6 +344,18 @@ package body Portal.Backend with SPARK_Mode => Off is
    --  Lifetime
    ---------------------------------------------------------------------
 
+   procedure Reset_State is
+   begin
+      Q_Head         := 0;
+      Q_Count        := 0;
+      Keys_Down      := [others => False];
+      Scancode_Map   := [others => Key_Unknown];
+      Mods           := No_Modifiers;
+      Buttons        := [others => False];
+      Text_Enabled   := [others => False];
+      Clipboard_Last := 0;
+   end Reset_State;
+
    procedure Initialize (Success : out Boolean) is
       Supported : aliased Bool;
       Name : chars_ptr := New_String ("WM_DELETE_WINDOW");
@@ -370,11 +384,10 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Finalize is
    begin
-      --  Destroy all open windows.
+      --  Destroy all remaining windows.
       for W in Valid_Window_Id loop
          if Slots (W).Open then
-            XDestroyWindow (Display, Slots (W).Handle);
-            Slots (W).Open := False;
+            Destroy_Window (W);
          end if;
       end loop;
 
@@ -399,9 +412,13 @@ package body Portal.Backend with SPARK_Mode => Off is
       end if;
 
       XCloseDisplay (Display);
-      Dpi_Scale := 100;
-      Display := Null_Display;
+
+      Display        := Null_Display;
+      Dpi_Scale      := 100;
       Cursor_Visible := True;
+
+      Reset_State;
+
       Initialized := False;
    end Finalize;
 
@@ -461,7 +478,12 @@ package body Portal.Backend with SPARK_Mode => Off is
    begin
       XDestroyWindow (Display, Slots (Window).Handle);
       XFlush (Display);
-      Slots (Window).Open := False;
+
+      Slots (Window).Open   := False;
+      Slots (Window).Handle := 0;
+      Slots (Window).Shape  := Arrow;
+
+      Text_Enabled (Window) := False;
    end Destroy_Window;
 
    procedure Set_Title (Window : Window_Id; Title : String) is

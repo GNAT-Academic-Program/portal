@@ -37,8 +37,12 @@ package body Portal.Backend with SPARK_Mode => Off is
 
    procedure Finalize is
    begin
-      Open := [others => False];
-      Initialized := False;
+      Open           := [others => False];
+      Q_Head         := 0;
+      Q_Count        := 0;
+      Polls          := 0;
+      Clipboard_Last := 0;
+      Initialized    := False;
    end Finalize;
 
    procedure Create_Window

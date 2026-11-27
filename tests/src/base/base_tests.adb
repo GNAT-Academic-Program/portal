@@ -9,6 +9,9 @@ with Portal.Input;       use Portal.Input;
 
 package body Base_Tests is
 
+   procedure Test_Backend_Lifecycle
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
    procedure Test_Types (T : in out AUnit.Test_Cases.Test_Case'Class) is
       --  This only needs done if the test case is not used
       pragma Unreferenced (T);
@@ -145,10 +148,126 @@ package body Base_Tests is
       AUnit.Assertions.Assert (not Is_Initialized, "Finalize");
    end Test_Backend_Queue;
 
+   procedure Test_Backend_Lifecycle
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+
+      OK : Boolean;
+      W1 : Window_Id;
+      W2 : Window_Id;
+      E  : Event;
+      S  : String (1 .. 16);
+      L  : Natural;
+   begin
+      --  Start the first backend session.
+      Initialize (OK);
+      AUnit.Assertions.Assert
+        (OK and then Is_Initialized, "Initial initialization failed");
+
+      --  Create two windows.
+      Create_Window
+        ("Lifecycle 1", (320, 240),
+         (Hidden => True, others => <>), W1);
+
+      Create_Window
+        ("Lifecycle 2", (320, 240),
+         (Hidden => True, others => <>), W2);
+
+      AUnit.Assertions.Assert
+        (W1 /= No_Window and then Is_Open (W1),
+         "First window creation failed");
+
+      AUnit.Assertions.Assert
+        (W2 /= No_Window and then Is_Open (W2),
+         "Second window creation failed");
+
+      AUnit.Assertions.Assert
+        (W1 /= W2, "Window identifiers must be distinct");
+
+      --  Leave application state behind intentionally.
+      Set_Clipboard ("previous session");
+
+      Push ((Kind => Quit, Time => 0, Window => No_Window));
+
+      --  Finalize without explicitly destroying the windows.
+      Finalize;
+
+      AUnit.Assertions.Assert
+        (not Is_Initialized, "Backend remains initialized");
+
+      AUnit.Assertions.Assert
+        (not Is_Open (W1), "First window remains open");
+
+      AUnit.Assertions.Assert
+        (not Is_Open (W2), "Second window remains open");
+
+      AUnit.Assertions.Assert
+        (Now = 0, "Clock must return zero after finalization");
+
+      --  Start a second backend session.
+      Initialize (OK);
+
+      AUnit.Assertions.Assert
+        (OK and then Is_Initialized, "Reinitialization failed");
+
+      --  No events should remain from the previous session.
+      Poll (E);
+
+      AUnit.Assertions.Assert
+        (E.Kind = None, "Event queue was not reset");
+
+      --  Verify that input state has been reset.
+      for K in Key loop
+         AUnit.Assertions.Assert
+           (not Is_Key_Down (K), "Stale keyboard state");
+      end loop;
+
+      AUnit.Assertions.Assert
+        (Mouse_Buttons = [Mouse_Button'Range => False],
+         "Stale mouse button state");
+
+      AUnit.Assertions.Assert
+        (Current_Modifiers = No_Modifiers,
+         "Stale modifier state");
+
+      --  Verify that the local clipboard has been reset.
+      Get_Clipboard (S, L);
+
+      AUnit.Assertions.Assert
+        (L = 0, "Clipboard was not reset");
+
+      --  Verify that window slots can be reused.
+      Create_Window
+        ("Lifecycle 3", (320, 240),
+         (Hidden => True, others => <>), W1);
+
+      AUnit.Assertions.Assert
+        (W1 /= No_Window and then Is_Open (W1),
+         "Window creation after reinitialization failed");
+
+      Destroy_Window (W1);
+
+      AUnit.Assertions.Assert
+        (not Is_Open (W1), "Window destruction failed");
+
+      Finalize;
+
+      AUnit.Assertions.Assert
+        (not Is_Initialized, "Second finalization failed");
+
+   exception
+      when others =>
+         if Is_Initialized then
+            Finalize;
+         end if;
+
+         raise;
+   end Test_Backend_Lifecycle;
+
    --  All tests must be registered in this method to run
    overriding procedure Register_Tests (T : in out Base_Test) is
    begin
-      --  Registration is done as follows
       AUnit.Test_Cases.Registration.Register_Routine
          (T, Test_Types'Access, "Test Types");
       AUnit.Test_Cases.Registration.Register_Routine
@@ -159,6 +278,8 @@ package body Base_Tests is
          (T, Test_Events'Access, "Test Events");
       AUnit.Test_Cases.Registration.Register_Routine
          (T, Test_Backend_Queue'Access, "Test Backend Queue");
+      AUnit.Test_Cases.Registration.Register_Routine
+         (T, Test_Backend_Lifecycle'Access, "Test Backend Lifecycle");
    end Register_Tests;
 
    --  Returns the name of the tests
