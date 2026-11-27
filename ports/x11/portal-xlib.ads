@@ -16,7 +16,17 @@ private package Portal.Xlib is
    subtype Window is XID;
    subtype Atom   is XID;
    subtype Cursor is XID;
+   subtype Pixmap is XID;
    type Bool is new int;
+
+   type XColor is record
+     Pixel : unsigned_long;
+     Red   : unsigned_short;
+     Green : unsigned_short;
+     Blue  : unsigned_short;
+     Flags : char;
+     Pad   : char;
+   end record with Convention => C;
 
    Null_Display : constant Display_Ptr := System.Null_Address;
 
@@ -209,6 +219,34 @@ private package Portal.Xlib is
      (D : Display_Ptr; Prog : chars_ptr; Option : chars_ptr) return chars_ptr
      with Import, Convention => C, External_Name => "XGetDefault";
 
+   function XCreateBitmapFromData
+     (D        : Display_Ptr;
+      Drawable : XID;
+      Data     : System.Address;
+      Width    : unsigned;
+      Height   : unsigned) return Pixmap
+     with Import, Convention => C,
+          External_Name => "XCreateBitmapFromData";
+
+   function XCreatePixmapCursor
+     (D          : Display_Ptr;
+      Source     : Pixmap;
+      Mask       : Pixmap;
+      Foreground : access XColor;
+      Background : access XColor;
+      Hot_X      : unsigned;
+      Hot_Y      : unsigned) return Cursor
+     with Import, Convention => C,
+          External_Name => "XCreatePixmapCursor";
+
+   function XFreePixmap
+     (D : Display_Ptr;
+      P : Pixmap) return int
+     with Import, Convention => C,
+          External_Name => "XFreePixmap";
+
+   function XFreeCursor (D : Display_Ptr; C : Cursor) return int
+     with Import, Convention => C, External_Name => "XFreeCursor";
    ---------------------------------------------------------------------
    --  XKB key names: every physical key has a 4 character name that
    --  does not depend on the layout ("AD01" is the first letter of the
