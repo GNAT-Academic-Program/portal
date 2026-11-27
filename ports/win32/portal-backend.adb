@@ -168,7 +168,13 @@ package body Portal.Backend with SPARK_Mode => Off is
          when WM_SETFOCUS =>
             Enqueue ((Kind => Window_Focus_In, Time => T, Window => Id)); return 0;
          when WM_KILLFOCUS =>
-            Enqueue ((Kind => Window_Focus_Out, Time => T, Window => Id)); return 0;
+            --  Release transient input state when focus is lost.
+            Keys_Down := [others => False];
+            Buttons   := [others => False];
+
+            Enqueue ((Kind => Window_Focus_Out, Time => T, Window => Id));
+
+            return 0;
 
          when WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP =>
             declare
@@ -247,10 +253,15 @@ package body Portal.Backend with SPARK_Mode => Off is
    procedure Pump is
       M : aliased MSG;
    begin
-      while PeekMessageA (M'Access, System.Null_Address, 0, 0, PM_REMOVE) /= 0 loop
+      --  Avoid draining native messages into a full event queue.
+      while Q_Count <= Max_Queue - 2
+        and then PeekMessageA
+          (M'Access, System.Null_Address, 0, 0, PM_REMOVE) /= 0
+      loop
          if TranslateMessage (M'Access) = 0 then
             null;
          end if;
+
          if DispatchMessageA (M'Access) = 0 then
             null;
          end if;

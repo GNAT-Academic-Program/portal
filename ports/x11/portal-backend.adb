@@ -274,8 +274,13 @@ package body Portal.Backend with SPARK_Mode => Off is
 
          when Enter_Notify => Enqueue ((Kind => Mouse_Enter, Time => T, Window => W));
          when Leave_Notify => Enqueue ((Kind => Mouse_Leave, Time => T, Window => W));
-         when Focus_In     => Enqueue ((Kind => Window_Focus_In, Time => T, Window => W));
-         when Focus_Out    => Enqueue ((Kind => Window_Focus_Out, Time => T, Window => W));
+         when Focus_In => Enqueue ((Kind => Window_Focus_In, Time => T, Window => W));
+         when Focus_Out =>
+            --  Release transient input state when focus is lost.
+            Keys_Down := [others => False];
+            Buttons   := [others => False];
+            Mods      := No_Modifiers;
+            Enqueue ((Kind => Window_Focus_Out, Time => T, Window => W));
          when Expose       => Enqueue ((Kind => Window_Expose, Time => T, Window => W));
          when Map_Notify   => Enqueue ((Kind => Window_Shown, Time => T, Window => W));
          when Unmap_Notify => Enqueue ((Kind => Window_Hidden, Time => T, Window => W));
@@ -304,7 +309,11 @@ package body Portal.Backend with SPARK_Mode => Off is
    procedure Pump is
       Raw : aliased XEvent_Raw;
    begin
-      while XPending (Display) > 0 loop
+      --  A native event may generate up to two Portal events.
+      --  Leave pending native events queued when capacity is low.
+      while Q_Count <= Max_Queue - 2
+        and then XPending (Display) > 0
+      loop
          XNextEvent (Display, Raw);
          Translate (Raw);
       end loop;

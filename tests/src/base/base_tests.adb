@@ -6,10 +6,20 @@ with Portal;
 with Portal.Backend;     use Portal.Backend;
 with Portal.Framebuffer; use Portal.Framebuffer;
 with Portal.Input;       use Portal.Input;
+with Ada.Environment_Variables;
+with GNAT.OS_Lib;
 
 package body Base_Tests is
 
+   procedure Run_X11_Command (Command : String);
+
+   procedure Test_X11_Event_Handling
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
    procedure Test_Backend_Lifecycle
+     (T : in out AUnit.Test_Cases.Test_Case'Class);
+
+   procedure Test_Queue_Capacity
      (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    procedure Test_Types (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -265,6 +275,226 @@ package body Base_Tests is
          raise;
    end Test_Backend_Lifecycle;
 
+   procedure Test_Queue_Capacity
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+
+      OK : Boolean;
+      E  : Event;
+   begin
+      Initialize (OK);
+      AUnit.Assertions.Assert (OK, "Initialization failed");
+
+      --  Fill the event queue.
+      for I in 1 .. 256 loop
+         Push ((Kind => Quit, Time => Ticks (I),
+                Window => No_Window));
+      end loop;
+
+      --  Verify that overflow does not overwrite existing events.
+      Push ((Kind => Quit, Time => 999,
+             Window => No_Window));
+
+      --  Remove the first half of the queue.
+      for I in 1 .. 128 loop
+         Poll (E);
+
+         AUnit.Assertions.Assert
+           (E.Kind = Quit and then E.Time = Ticks (I),
+            "Incorrect FIFO ordering");
+      end loop;
+
+      --  Refill the queue, forcing the ring buffer to wrap.
+      for I in 257 .. 384 loop
+         Push ((Kind => Quit, Time => Ticks (I),
+                Window => No_Window));
+      end loop;
+
+      --  Verify the remaining events.
+      for I in 129 .. 384 loop
+         Poll (E);
+
+         AUnit.Assertions.Assert
+           (E.Kind = Quit and then E.Time = Ticks (I),
+            "Incorrect ordering after queue wraparound");
+      end loop;
+
+      --  Verify that the queue is empty.
+      Poll (E);
+
+      AUnit.Assertions.Assert
+        (E.Kind = None, "Queue should be empty");
+
+      Finalize;
+
+   exception
+      when others =>
+         if Is_Initialized then
+            Finalize;
+         end if;
+
+         raise;
+   end Test_Queue_Capacity;
+
+   procedure Run_X11_Command (Command : String) is
+      use GNAT.OS_Lib;
+
+      Args : Argument_List (1 .. 2) :=
+        [new String'("-c"), new String'(Command)];
+
+      Status : Integer;
+   begin
+      Status := Spawn ("/bin/sh", Args);
+
+      Free (Args (1));
+      Free (Args (2));
+
+      AUnit.Assertions.Assert
+        (Status = 0, "Native command failed: " & Command);
+   end Run_X11_Command;
+
+   procedure Test_X11_Event_Handling
+     (T : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (T);
+
+      OK : Boolean;
+      W1 : Window_Id;
+      W2 : Window_Id;
+      E  : Event;
+
+      Pressed     : Boolean := False;
+      Released    : Boolean := False;
+      Focus_Lost  : Boolean := False;
+      State_Clear : Boolean := False;
+   begin
+      Initialize (OK);
+      AUnit.Assertions.Assert (OK, "Initialization failed");
+
+      Create_Window
+        ("PAL Queue A", (320, 240),
+         (Hidden => False, others => <>), W1);
+
+      Create_Window
+        ("PAL Queue B", (320, 240),
+         (Hidden => False, others => <>), W2);
+
+      AUnit.Assertions.Assert
+        (W1 /= No_Window and then W2 /= No_Window,
+         "Window creation failed");
+
+      --  Give the first window keyboard focus.
+      Run_X11_Command
+        ("xdotool search --sync --onlyvisible " &
+         "--name '^PAL Queue A$' windowfocus --sync");
+
+      --  Drain initial native window events.
+      loop
+         Poll (E);
+         exit when E.Kind = None;
+      end loop;
+
+      --  Fill the application event queue.
+      for I in 1 .. 256 loop
+         Push ((Kind => Quit, Time => Ticks (I),
+                Window => No_Window));
+      end loop;
+
+      --  Generate native keyboard events while the queue is full.
+      Run_X11_Command
+        ("xdotool key w getwindowfocus >/dev/null");
+
+      Sleep (50);
+
+      --  Verify that existing events retain their order.
+      for I in 1 .. 256 loop
+         Poll (E);
+
+         AUnit.Assertions.Assert
+           (E.Kind = Quit and then E.Time = Ticks (I),
+            "Queued event was lost or reordered");
+      end loop;
+
+      --  Verify that native keyboard events were preserved.
+      for I in 1 .. 50 loop
+         Wait (E, 20);
+
+         if E.Kind = Key_Down
+           and then E.Window = W1
+           and then E.Key = Key_W
+         then
+            Pressed := True;
+         elsif E.Kind = Key_Up
+           and then E.Window = W1
+           and then E.Key = Key_W
+         then
+            Released := Pressed;
+            exit;
+         end if;
+      end loop;
+
+      AUnit.Assertions.Assert
+        (Pressed and Released,
+         "Native keyboard events lost during queue saturation");
+
+      --  Hold W and verify the polled keyboard state.
+      Run_X11_Command ("xdotool keydown w");
+
+      Pressed := False;
+
+      for I in 1 .. 50 loop
+         Wait (E, 20);
+
+         if E.Kind = Key_Down
+           and then E.Window = W1
+           and then E.Key = Key_W
+         then
+            Pressed := Is_Key_Down (Key_W);
+            exit;
+         end if;
+      end loop;
+
+      --  Transfer focus while W remains held.
+      Run_X11_Command
+        ("xdotool search --sync --onlyvisible " &
+         "--name '^PAL Queue B$' windowfocus --sync");
+
+      for I in 1 .. 50 loop
+         Wait (E, 20);
+
+         if E.Kind = Window_Focus_Out
+           and then E.Window = W1
+         then
+            Focus_Lost := True;
+            State_Clear := not Is_Key_Down (Key_W);
+            exit;
+         end if;
+      end loop;
+
+      --  Release the native key before evaluating assertions.
+      Run_X11_Command ("xdotool keyup w");
+
+      AUnit.Assertions.Assert
+        (Pressed, "Keyboard state was not updated");
+
+      AUnit.Assertions.Assert
+        (Focus_Lost, "Focus loss event was not received");
+
+      AUnit.Assertions.Assert
+        (State_Clear, "Keyboard state retained after focus loss");
+
+      Finalize;
+
+   exception
+      when others =>
+         if Is_Initialized then
+            Finalize;
+         end if;
+
+         raise;
+   end Test_X11_Event_Handling;
+
    --  All tests must be registered in this method to run
    overriding procedure Register_Tests (T : in out Base_Test) is
    begin
@@ -280,6 +510,15 @@ package body Base_Tests is
          (T, Test_Backend_Queue'Access, "Test Backend Queue");
       AUnit.Test_Cases.Registration.Register_Routine
          (T, Test_Backend_Lifecycle'Access, "Test Backend Lifecycle");
+      AUnit.Test_Cases.Registration.Register_Routine
+         (T, Test_Queue_Capacity'Access, "Test Queue Capacity");
+      if Ada.Environment_Variables.Value
+        ("PORTAL_TEST_X11_INPUT", "") = "1"
+      then
+         AUnit.Test_Cases.Registration.Register_Routine
+           (T, Test_X11_Event_Handling'Access,
+            "Test X11 Native Event Handling");
+      end if;
    end Register_Tests;
 
    --  Returns the name of the tests
